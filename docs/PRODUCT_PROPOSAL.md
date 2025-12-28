@@ -36,9 +36,9 @@ Code Coach is the "explainability layer" for AI-generated and inherited codebase
 
 ---
 
-## Core Feature Set (Full Vision)
+## Core Feature Set (MVP: Full Vision)
 
-All features below represent the full product vision. The MVP ships a subset to validate the core promise (fast, cited understanding + debugging). See the MVP cutline after the feature list for scope.
+The MVP ships the full feature vision below, with deep functionality and LLM-enhanced outputs where applicable. The MVP timeline is extended to support full scope.
 
 ### Feature 1: Explain Selection
 
@@ -114,21 +114,6 @@ All features below represent the full product vision. The MVP ships a subset to 
 
 ---
 
-### MVP Cutline (4-6 weeks)
-
-| Feature | Included in MVP? | MVP Scope Notes |
-|---------|------------------|----------------|
-| Explain Selection | ✅ | AST-powered summary + line-by-line + citations |
-| Explain Diagnostic (Enhanced) | ✅ | Top 20 TS/JS error patterns + hover + quick fix |
-| Trace Error Origin | ✅ | Static call graph only; confidence label required |
-| Symbol Deep Dive | ✅ | Usages + blame + recent commits (tests/AI summary in V1) |
-| Code Smell Detector | ❌ | V1: 10 high-signal rules + diff preview |
-| "Why Does This Work?" Mode | ❌ | V1: LLM-enhanced reasoning + assumptions |
-| Inline Annotations (Coach Mode) | ❌ | V2: opt-in inline layer |
-| Test Gap Finder | ❌ | V1: lcov + Jest/Vitest branch gaps |
-
----
-
 ## Differentiators vs Competition
 
 | Capability | Copilot | Cursor | Codeium | ChatGPT | **Code Coach** |
@@ -142,7 +127,7 @@ All features below represent the full product vision. The MVP ships a subset to 
 | Cites exact code locations | ❌ | ❌ | ❌ | ❌ | ✅ Always |
 | Monorepo optimized | ⚠️ | ⚠️ | ⚠️ | ❌ | ✅ Incremental indexing |
 
-**Key differentiator:** Code Coach is the only tool that provides **traceable, citable explanations**. Every insight links back to file:line:symbol. No hallucinated answers without provenance. MVP delivers citations + trace + deep dive; V1/V2 add smells, test gaps, and inline annotations.
+**Key differentiator:** Code Coach is the only tool that provides **traceable, citable explanations**. Every insight links back to file:line:symbol. No hallucinated answers without provenance. MVP delivers the full feature set: explain, trace, smells, deep dive, test gaps, and inline annotations.
 
 ---
 
@@ -307,7 +292,7 @@ Step 6: Add comment in PR: "Fixed SQL injection risk flagged by Code Coach"
 │ ┌──────────┐  ┌──────────────┐  ┌──────────────┐                │
 │ │ Static   │  │ Context      │  │ LLM          │                │
 │ │ Analysis │  │ Gatherer     │  │ Interface    │                │
-│ │ Engine   │  │              │  │ (optional)   │                │
+│ │ Engine   │  │              │  │ (configurable)│               │
 │ └────┬─────┘  └──────┬───────┘  └──────┬───────┘                │
 │      │               │                 │                         │
 │      ▼               ▼                 ▼                         │
@@ -403,7 +388,7 @@ Input (code selection / diagnostic / symbol)
 | Edge case enumeration | | ✅ |
 | Cross-file intent inference | | ✅ |
 
-**Design principle:** Every feature works in "offline mode" with reduced capability. LLM enhances but is never required.
+**Design principle:** The MVP ships LLM-enhanced outputs for all applicable features, with deterministic offline fallbacks (reduced depth + confidence labels). LLM is additive, not foundational.
 
 ---
 
@@ -477,26 +462,26 @@ Users can click any citation to jump to source. Explanations without citations a
 
 ## Roadmap
 
-### MVP (4-6 weeks)
+### MVP (8-12 weeks)
 
 | Week | Deliverable |
 |------|-------------|
-| 1-2 | Enhanced Explain Selection with AST-powered walkthrough |
-| 2-3 | Explain Diagnostic (Enhanced) with known error patterns (TS 2304, 2339, 2322, 2345 + 20 more) |
-| 3-4 | Trace Error Origin (static call graph + confidence labels) |
-| 4-5 | Symbol Deep Dive sidebar (usages + blame + recent commits) |
-| 5-6 | Polish, telemetry, error handling, beta release |
+| 1-2 | Explain Selection + Explain Diagnostic (AST + top TS/JS error patterns) |
+| 3-4 | Trace Error Origin + Symbol Deep Dive (call graph, usages, blame, tests) |
+| 5-6 | LLM integration + "Why Does This Work" + AI summaries |
+| 7-8 | Code Smell Detector + Test Gap Finder (rules + coverage hooks) |
+| 9-10 | Inline Annotations (Coach Mode) + UX polish |
+| 11-12 | Performance, telemetry, error handling, beta release |
 
 **MVP success criteria:** 1,000 installs, 100 weekly active users, 4.0+ star rating.
 
 ### V1 (3 months)
 
-- LLM integration (Anthropic Claude) for natural language summaries
-- Code Smell Detector (10 patterns: O(n²), SQL injection, etc.)
-- Test Gap Finder (branch coverage integration)
-- "Why Does This Work" mode
+- Stack trace correlation for root-cause tracing (runtime + static)
+- Expanded smell rules + false-positive tuning
+- Test gap support for more runners/coverage formats
 - Python support (basic)
-- Team tier launch
+- Team tier launch + admin policy controls
 
 **V1 success criteria:** 10,000 installs, 1,000 WAU, 100 paying users.
 
