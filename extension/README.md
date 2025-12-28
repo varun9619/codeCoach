@@ -23,12 +23,6 @@ Settings:
 - `codeCoach.ai.authHeader` (default: Authorization)
 - `codeCoach.ai.authScheme` (default: Bearer)
 
-Example (Siemens docs style):
-
-- `codeCoach.ai.baseUrl`: `https://api.siemens.com/llm/v1`
-- `codeCoach.ai.endpointPath`: `/chat/completions` (confirm in your docs)
-- `codeCoach.ai.model`: your chosen model/deployment name
-
 ## Usage
 
 - Select code → Command Palette → **Code Coach: Explain Selection**
