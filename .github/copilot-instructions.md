@@ -1,0 +1,4 @@
+- Keep changes minimal and focused on the static-only MVP.
+- Prefer clear, plain-English explanations over long output.
+- JS/TS first; design for future language adapters.
+- Avoid adding extra UI beyond Output Channel and hover text unless requested.

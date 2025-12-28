@@ -1,0 +1,49 @@
+{
+  "name": "code-coach",
+  "displayName": "Code Coach",
+  "description": "A code coach that explains JS/TS code and diagnostics in plain English.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:codeCoach.explainSelection",
+    "onCommand:codeCoach.explainDiagnostic",
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescriptreact"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codeCoach.explainSelection",
+        "title": "Code Coach: Explain Selection"
+      },
+      {
+        "command": "codeCoach.explainDiagnostic",
+        "title": "Code Coach: Explain Diagnostic"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "typescript": "^5.9.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.90.0",
+    "@typescript-eslint/eslint-plugin": "^8.19.0",
+    "@typescript-eslint/parser": "^8.19.0",
+    "eslint": "^9.17.0"
+  }
+}
