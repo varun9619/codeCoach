@@ -28,8 +28,106 @@
       {
         "command": "codeCoach.explainDiagnostic",
         "title": "Code Coach: Explain Diagnostic"
+      },
+      {
+        "command": "codeCoach.explainLastException",
+        "title": "Code Coach: Explain Last Exception (Runtime)"
+      },
+      {
+        "command": "codeCoach.traceDiagnosticOrigin",
+        "title": "Code Coach: Trace Diagnostic Origin"
+      },
+      {
+        "command": "codeCoach.showSmells",
+        "title": "Code Coach: Show Code Smells"
+      },
+      {
+        "command": "codeCoach.ai.setApiKey",
+        "title": "Code Coach: Set AI API Key"
+      },
+      {
+        "command": "codeCoach.ai.clearApiKey",
+        "title": "Code Coach: Clear AI API Key"
       }
-    ]
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "codeCoach.explainSelection",
+          "when": "editorHasSelection && (editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact)",
+          "group": "navigation@50"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "codeCoach.explainSelection",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorTextFocus && editorHasSelection"
+      }
+    ],
+    "configuration": {
+      "title": "Code Coach",
+      "properties": {
+        "codeCoach.ai.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable AI-assisted explanations (uses your configured endpoint and stored API key)."
+        },
+        "codeCoach.ai.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL for your AI endpoint (example: https://api.example.com). Leave empty to disable requests."
+        },
+        "codeCoach.ai.endpointPath": {
+          "type": "string",
+          "default": "/chat/completions",
+          "description": "Endpoint path appended to baseUrl. For OpenAI-compatible APIs this is often /chat/completions (or /responses)."
+        },
+        "codeCoach.ai.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model/deployment identifier required by your endpoint. Leave empty to disable AI calls."
+        },
+        "codeCoach.ai.responseStyle": {
+          "type": "string",
+          "default": "concise",
+          "enum": [
+            "concise",
+            "detailed"
+          ],
+          "description": "Controls how AI explanations are written. 'concise' prefers short bullets; 'detailed' prefers a Copilot-like paragraph explanation."
+        },
+        "codeCoach.ai.authHeader": {
+          "type": "string",
+          "default": "Authorization",
+          "description": "HTTP header used to pass the API key. Common values: Authorization, X-API-Key."
+        },
+        "codeCoach.ai.authScheme": {
+          "type": "string",
+          "default": "Bearer",
+          "description": "Auth scheme prefix for the header value. Example: 'Bearer' to send 'Authorization: Bearer <key>'. Leave empty to send the key as-is."
+        },
+        "codeCoach.runtime.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable runtime capture from debug sessions (captures stack + locals on exceptions)."
+        },
+        "codeCoach.runtime.autoExplainOnException": {
+          "type": "boolean",
+          "default": true,
+          "description": "When the debugger stops on an exception, automatically write an explanation to the Code Coach output channel."
+        },
+        "codeCoach.runtime.maxVariables": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 200,
+          "description": "Maximum number of local variables to include in runtime explanations."
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",
