@@ -27,6 +27,13 @@ Settings:
 - `codeCoach.ai.authHeader` / `codeCoach.ai.authScheme` (override auth header/scheme)
 - `codeCoach.ai.temperature` / `codeCoach.ai.maxTokens`
 - `codeCoach.ai.openrouter.referer` / `codeCoach.ai.openrouter.title` (optional headers)
+- UI surfaces:
+  - `codeCoach.ui.explainSelection`
+  - `codeCoach.ui.explainDiagnostic`
+  - `codeCoach.ui.traceDiagnosticOrigin`
+  - `codeCoach.ui.runtimeException`
+  - `codeCoach.ui.codeSmells`
+  (values: `output` or `panel`)
 
 ## Usage
 

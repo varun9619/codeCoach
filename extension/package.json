@@ -180,6 +180,51 @@
           "minimum": 5,
           "maximum": 200,
           "description": "Maximum number of local variables to include in runtime explanations."
+        },
+        "codeCoach.ui.explainSelection": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel"
+          ],
+          "default": "output",
+          "description": "Where to display Explain Selection results."
+        },
+        "codeCoach.ui.explainDiagnostic": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel"
+          ],
+          "default": "output",
+          "description": "Where to display Explain Diagnostic command results."
+        },
+        "codeCoach.ui.traceDiagnosticOrigin": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel"
+          ],
+          "default": "output",
+          "description": "Where to display Trace Diagnostic Origin results."
+        },
+        "codeCoach.ui.runtimeException": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel"
+          ],
+          "default": "output",
+          "description": "Where to display Explain Last Exception results."
+        },
+        "codeCoach.ui.codeSmells": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel"
+          ],
+          "default": "output",
+          "description": "Where to display Code Smells reports."
         }
       }
     },

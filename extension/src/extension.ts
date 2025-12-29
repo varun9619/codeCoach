@@ -11,6 +11,7 @@ import { buildDeepDiveData, DeepDiveProvider } from './deepDive';
 let outputChannel: vscode.OutputChannel | undefined;
 let smellDiagnostics: vscode.DiagnosticCollection | undefined;
 let deepDiveProvider: DeepDiveProvider | undefined;
+const panels = new Map<string, vscode.WebviewPanel>();
 
 export function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel('Code Coach');
@@ -105,9 +106,7 @@ export function activate(context: vscode.ExtensionContext) {
         explanation += `\n\nAI was enabled but not used because the AI request failed:\n- ${aiFailure}`;
       }
 
-      outputChannel?.clear();
-      outputChannel?.appendLine(explanation);
-      outputChannel?.show(true);
+      presentResult('Code Coach: Explain Selection', 'codeCoach.explainSelection', explanation);
     }),
 
     vscode.commands.registerCommand('codeCoach.explainDiagnostic', async () => {
@@ -127,9 +126,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const msg = explainDiagnostic(diag, editor.document.languageId);
-      outputChannel?.clear();
-      outputChannel?.appendLine(msg);
-      outputChannel?.show(true);
+      presentResult('Code Coach: Explain Diagnostic', 'codeCoach.explainDiagnostic', msg);
     }),
 
     vscode.commands.registerCommand('codeCoach.traceDiagnosticOrigin', async () => {
@@ -149,9 +146,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const report = await buildDiagnosticOriginReport(editor.document, diag);
-      outputChannel?.clear();
-      outputChannel?.appendLine(report);
-      outputChannel?.show(true);
+      presentResult('Code Coach: Trace Diagnostic Origin', 'codeCoach.traceDiagnosticOrigin', report);
     }),
 
     vscode.commands.registerCommand('codeCoach.showSmells', async () => {
@@ -172,9 +167,7 @@ export function activate(context: vscode.ExtensionContext) {
       smellDiagnostics?.set(editor.document.uri, diagnostics);
 
       const report = formatSmellReport(editor.document, smells);
-      outputChannel?.clear();
-      outputChannel?.appendLine(report);
-      outputChannel?.show(true);
+      presentResult('Code Coach: Code Smells', 'codeCoach.codeSmells', report);
     }),
 
     vscode.commands.registerCommand('codeCoach.deepDive', async () => {
@@ -238,9 +231,7 @@ export function activate(context: vscode.ExtensionContext) {
         explanation += `\n\nAI was enabled but not used because the AI request failed:\n- ${aiFailure}`;
       }
 
-      outputChannel?.clear();
-      outputChannel?.appendLine(explanation);
-      outputChannel?.show(true);
+      presentResult('Code Coach: Explain Last Exception', 'codeCoach.runtimeException', explanation);
     }),
 
     vscode.commands.registerCommand('codeCoach.ai.setApiKey', async () => {
@@ -529,6 +520,10 @@ export function deactivate() {
   smellDiagnostics = undefined;
   deepDiveProvider?.setData(undefined);
   deepDiveProvider = undefined;
+  for (const panel of panels.values()) {
+    panel.dispose();
+  }
+  panels.clear();
 }
 
 async function pickAiProvider(): Promise<AiProvider | undefined> {
@@ -546,4 +541,92 @@ async function pickAiProvider(): Promise<AiProvider | undefined> {
   });
 
   return picked?.provider;
+}
+
+type UiSurface = 'output' | 'panel';
+
+function presentResult(title: string, settingKey: string, content: string): void {
+  const surface = getUiSurface(settingKey);
+  if (surface === 'panel') {
+    showInPanel(settingKey, title, content);
+    return;
+  }
+
+  outputChannel?.clear();
+  outputChannel?.appendLine(content);
+  outputChannel?.show(true);
+}
+
+function getUiSurface(settingKey: string): UiSurface {
+  const raw = vscode.workspace.getConfiguration('codeCoach').get<string>(settingKey, 'output');
+  return raw === 'panel' ? 'panel' : 'output';
+}
+
+function showInPanel(viewType: string, title: string, content: string): void {
+  let panel = panels.get(viewType);
+  if (!panel) {
+    panel = vscode.window.createWebviewPanel(
+      viewType,
+      title,
+      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+      { enableFindWidget: true, retainContextWhenHidden: true }
+    );
+    panel.onDidDispose(() => {
+      panels.delete(viewType);
+    });
+    panels.set(viewType, panel);
+  } else {
+    panel.title = title;
+    panel.reveal(undefined, true);
+  }
+
+  panel.webview.html = buildPanelHtml(title, content);
+}
+
+function buildPanelHtml(title: string, content: string): string {
+  const escaped = escapeHtml(content);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      color: var(--vscode-editor-foreground);
+      background: var(--vscode-editor-background);
+      font-family: var(--vscode-editor-font-family);
+      font-size: var(--vscode-editor-font-size);
+    }
+    .panel-title {
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--vscode-titleBar-activeForeground);
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: var(--vscode-textBlockQuote-background);
+      border: 1px solid var(--vscode-panel-border);
+      padding: 12px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel-title">${escapeHtml(title)}</div>
+  <pre>${escaped}</pre>
+</body>
+</html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
