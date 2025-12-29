@@ -268,14 +268,16 @@ Step 6: Add comment in PR: "Fixed SQL injection risk flagged by Code Coach"
 
 ## Visual Language (IntelliSense-Parity)
 
-Code Coach uses the same visual language developers already trust in VS Code, so insights feel like native IntelliSense rather than a separate AI layer.
+Code Coach mirrors VS Code's IntelliSense and diagnostics so the UI feels native, not "AI overlay."
 
-- **Severity colors:** red for errors, yellow for warnings, blue for info; consistent with Problems panel and squiggles.
-- **Hover tooltips:** expanded diagnostic hovers with "Cause / Fix / Source" sections and clickable citations.
-- **Inline hints:** Coach Mode uses inlay-hint styling, lightweight ghost text, and theme tokens for readability.
-- **Quick fixes:** lightbulb actions with diff previews; no auto-apply for risky changes.
-- **Badges and icons:** CodeLens badges (e.g., "Tests: 3 passing, 2 gaps") and smell icons for scanability.
-- **Accessibility:** respects user themes, high-contrast mode, and reduce-motion settings.
+- **Severity mapping (Diagnostics):** use `DiagnosticSeverity` with theme tokens `editorError.foreground`, `editorWarning.foreground`, `editorInfo.foreground`, `editorHint.foreground` for squiggles and Problems panel alignment.
+- **Hover styling:** diagnostic hovers use `editorHoverWidget.background`, `editorHoverWidget.border`, `editorHoverWidget.foreground` and standard codicons (`$(error)`, `$(warning)`, `$(info)`). Sections: Cause, Fix, Source (citations).
+- **Inline hints (Coach Mode):** use `InlayHint` API and `editorInlayHint.foreground/background`, plus `editorInlayHint.typeForeground`, `editorInlayHint.parameterForeground` for subtle, non-blocking annotations.
+- **CodeLens badges:** use `editorCodeLens.foreground` and `editorCodeLens.activeForeground`; keep badge text concise ("Tests: 3/5", "Smells: 2").
+- **Decorations for trace/smells:** `TextEditorDecorationType` with `overviewRulerColor` and `overviewRulerLane` to mirror VS Code error gutters; no custom colors outside theme tokens.
+- **Quick fixes:** use `CodeActionKind.QuickFix` with lightbulb affordance and diff preview; never auto-apply for medium/high-risk fixes.
+- **Webview panels:** respect theme CSS variables (`--vscode-editor-foreground`, `--vscode-editor-background`, `--vscode-panel-border`) for call graph and deep dive panels.
+- **Accessibility:** support high-contrast and color-blind safe modes; provide toggles to reduce inline hints or disable animated panels.
 
 ---
 
