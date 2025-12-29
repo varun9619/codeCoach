@@ -11,6 +11,21 @@ let outputChannel: vscode.OutputChannel | undefined;
 export function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel('Code Coach');
 
+  // Startup logging for debugging
+  outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  outputChannel.appendLine('🚀 Code Coach activated!');
+  outputChannel.appendLine(`   Version: ${context.extension.packageJSON.version}`);
+  outputChannel.appendLine(`   Workspace: ${vscode.workspace.name ?? 'No workspace'}`);
+  outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  outputChannel.appendLine('');
+  outputChannel.appendLine('Commands available:');
+  outputChannel.appendLine('  • Code Coach: Explain Selection');
+  outputChannel.appendLine('  • Code Coach: Explain Diagnostic');
+  outputChannel.appendLine('  • Code Coach: Explain Last Exception');
+  outputChannel.appendLine('  • Code Coach: Set/Clear AI API Key');
+  outputChannel.appendLine('');
+  outputChannel.show(true);
+
   const runtime = registerRuntimeTracing(context, outputChannel);
 
   context.subscriptions.push(
