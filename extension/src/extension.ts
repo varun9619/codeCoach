@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { explainSelection } from './explainSelection';
 import { explainDiagnostic } from './explainDiagnostics';
 import { registerRuntimeTracing } from './runtimeTracing';
-import { clearAiApiKey, setAiApiKey } from './aiSettings';
+import { AiProvider, clearAiApiKey, getAiConfig, setAiApiKey } from './aiSettings';
 import { aiExplain } from './aiClient';
 import { verifyAiResult } from './aiVerify';
 
@@ -163,6 +163,9 @@ export function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('codeCoach.ai.setApiKey', async () => {
+      const provider = await pickAiProvider();
+      if (!provider) return;
+
       const apiKey = await vscode.window.showInputBox({
         title: 'Code Coach: Set AI API Key',
         prompt: 'Paste your API key. It will be stored securely in VS Code Secret Storage.',
@@ -176,19 +179,23 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      await setAiApiKey(context, apiKey.trim());
-      vscode.window.showInformationMessage('Code Coach AI API key saved (Secret Storage).');
+      await setAiApiKey(context, provider, apiKey.trim());
+      await vscode.workspace.getConfiguration('codeCoach').update('ai.provider', provider, vscode.ConfigurationTarget.Global);
+      vscode.window.showInformationMessage(`Code Coach AI API key saved for ${provider}.`);
     }),
 
     vscode.commands.registerCommand('codeCoach.ai.clearApiKey', async () => {
+      const provider = await pickAiProvider();
+      if (!provider) return;
+
       const choice = await vscode.window.showWarningMessage(
-        'Remove the stored AI API key from VS Code Secret Storage?',
+        `Remove the stored AI API key for ${provider}?`,
         { modal: true },
         'Remove'
       );
       if (choice !== 'Remove') return;
-      await clearAiApiKey(context);
-      vscode.window.showInformationMessage('Code Coach AI API key removed.');
+      await clearAiApiKey(context, provider);
+      vscode.window.showInformationMessage(`Code Coach AI API key removed for ${provider}.`);
     })
   );
 
@@ -306,4 +313,21 @@ function findEnclosingSymbol(symbols: vscode.DocumentSymbol[], position: vscode.
 export function deactivate() {
   outputChannel?.dispose();
   outputChannel = undefined;
+}
+
+async function pickAiProvider(): Promise<AiProvider | undefined> {
+  const current = getAiConfig().provider;
+  const options: Array<{ label: string; description: string; provider: AiProvider }> = [
+    { label: 'OpenRouter', description: current === 'openrouter' ? 'current' : '', provider: 'openrouter' },
+    { label: 'OpenAI', description: current === 'openai' ? 'current' : '', provider: 'openai' },
+    { label: 'Anthropic', description: current === 'anthropic' ? 'current' : '', provider: 'anthropic' },
+    { label: 'Gemini', description: current === 'gemini' ? 'current' : '', provider: 'gemini' }
+  ];
+
+  const picked = await vscode.window.showQuickPick(options, {
+    title: 'Code Coach: Select AI Provider',
+    placeHolder: 'Choose where to store/use an API key'
+  });
+
+  return picked?.provider;
 }

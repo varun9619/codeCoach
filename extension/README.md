@@ -9,7 +9,7 @@ A minimal static-only MVP that helps you understand code and diagnostics.
 
 ## AI (optional)
 
-This extension can store an API key securely (VS Code Secret Storage). It does not force any specific model/provider.
+This extension can store API keys securely (VS Code Secret Storage) and supports OpenRouter, OpenAI, Anthropic, and Gemini. OpenRouter is the default provider.
 
 - Command Palette → **Code Coach: Set AI API Key**
 - Command Palette → **Code Coach: Clear AI API Key**
@@ -17,11 +17,13 @@ This extension can store an API key securely (VS Code Secret Storage). It does n
 Settings:
 
 - `codeCoach.ai.enabled` (default: false)
-- `codeCoach.ai.baseUrl` (your endpoint base URL)
-- `codeCoach.ai.endpointPath` (default: /chat/completions)
-- `codeCoach.ai.model` (model/deployment id required by your endpoint)
-- `codeCoach.ai.authHeader` (default: Authorization)
-- `codeCoach.ai.authScheme` (default: Bearer)
+- `codeCoach.ai.provider` (openrouter | openai | anthropic | gemini)
+- `codeCoach.ai.baseUrl` (override provider default)
+- `codeCoach.ai.endpointPath` (override provider default; supports `{model}` placeholder)
+- `codeCoach.ai.model` (override provider default)
+- `codeCoach.ai.authHeader` / `codeCoach.ai.authScheme` (override auth header/scheme)
+- `codeCoach.ai.temperature` / `codeCoach.ai.maxTokens`
+- `codeCoach.ai.openrouter.referer` / `codeCoach.ai.openrouter.title` (optional headers)
 
 ## Usage
 

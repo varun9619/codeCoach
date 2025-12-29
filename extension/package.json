@@ -13,6 +13,9 @@
   "activationEvents": [
     "onCommand:codeCoach.explainSelection",
     "onCommand:codeCoach.explainDiagnostic",
+    "onCommand:codeCoach.explainLastException",
+    "onCommand:codeCoach.ai.setApiKey",
+    "onCommand:codeCoach.ai.clearApiKey",
     "onLanguage:javascript",
     "onLanguage:typescript",
     "onLanguage:javascriptreact",
@@ -75,20 +78,31 @@
           "default": false,
           "description": "Enable AI-assisted explanations (uses your configured endpoint and stored API key)."
         },
+        "codeCoach.ai.provider": {
+          "type": "string",
+          "enum": [
+            "openrouter",
+            "openai",
+            "anthropic",
+            "gemini"
+          ],
+          "default": "openrouter",
+          "description": "AI provider used for Code Coach requests."
+        },
         "codeCoach.ai.baseUrl": {
           "type": "string",
           "default": "",
-          "description": "Base URL for your AI endpoint (example: https://api.example.com). Leave empty to disable requests."
+          "description": "Override the base URL for the selected provider. Leave empty to use the default."
         },
         "codeCoach.ai.endpointPath": {
           "type": "string",
-          "default": "/chat/completions",
-          "description": "Endpoint path appended to baseUrl. For OpenAI-compatible APIs this is often /chat/completions (or /responses)."
+          "default": "",
+          "description": "Override the endpoint path for the selected provider. Supports {model} placeholder."
         },
         "codeCoach.ai.model": {
           "type": "string",
           "default": "",
-          "description": "Model/deployment identifier required by your endpoint. Leave empty to disable AI calls."
+          "description": "Override the model/deployment identifier for the selected provider."
         },
         "codeCoach.ai.responseStyle": {
           "type": "string",
@@ -101,13 +115,42 @@
         },
         "codeCoach.ai.authHeader": {
           "type": "string",
-          "default": "Authorization",
-          "description": "HTTP header used to pass the API key. Common values: Authorization, X-API-Key."
+          "default": "",
+          "description": "Override the authorization header name for the selected provider."
         },
         "codeCoach.ai.authScheme": {
           "type": "string",
-          "default": "Bearer",
-          "description": "Auth scheme prefix for the header value. Example: 'Bearer' to send 'Authorization: Bearer <key>'. Leave empty to send the key as-is."
+          "default": "",
+          "description": "Override the authorization scheme (e.g., Bearer). Leave empty to send the key as-is."
+        },
+        "codeCoach.ai.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "AI sampling temperature."
+        },
+        "codeCoach.ai.maxTokens": {
+          "type": "number",
+          "default": 800,
+          "minimum": 64,
+          "maximum": 4000,
+          "description": "Maximum tokens requested from the model."
+        },
+        "codeCoach.ai.extraHeaders": {
+          "type": "object",
+          "default": {},
+          "description": "Extra headers to include in AI requests."
+        },
+        "codeCoach.ai.openrouter.referer": {
+          "type": "string",
+          "default": "",
+          "description": "Optional HTTP-Referer header for OpenRouter requests."
+        },
+        "codeCoach.ai.openrouter.title": {
+          "type": "string",
+          "default": "",
+          "description": "Optional X-Title header for OpenRouter requests."
         },
         "codeCoach.runtime.enabled": {
           "type": "boolean",

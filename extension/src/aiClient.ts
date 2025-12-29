@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getAiApiKey, getAiConfig } from './aiSettings';
+import { AiConfig, AiProvider, getAiApiKey, getAiConfig } from './aiSettings';
 
 export type AiExplainInput = {
   kind: 'selection' | 'exception';
@@ -28,41 +28,21 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
   if (!cfg.endpointPath) throw new Error('AI endpoint path is empty (codeCoach.ai.endpointPath).');
   if (!cfg.model) throw new Error('AI model/deployment is empty (codeCoach.ai.model).');
 
-  const apiKey = await getAiApiKey(context);
-  if (!apiKey) throw new Error('No API key stored. Run "Code Coach: Set AI API Key" first.');
+  const apiKey = await getAiApiKey(context, cfg.provider);
+  if (!apiKey) throw new Error(`No API key stored for ${cfg.provider}. Run "Code Coach: Set AI API Key".`);
 
-  const url = joinUrl(cfg.baseUrl, cfg.endpointPath);
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
-  };
+  const url = joinUrl(cfg.baseUrl, resolveEndpointPath(cfg));
+  const headers = buildHeaders(cfg, apiKey);
+  const systemPrompt = buildSystemPrompt(cfg.responseStyle);
+  const userPrompt = buildUserPrompt(input, cfg.responseStyle);
 
-  const headerValue = cfg.authScheme ? `${cfg.authScheme} ${apiKey}` : apiKey;
-  headers[cfg.authHeader || 'Authorization'] = headerValue;
-
-  // OpenAI-compatible "chat/completions" request.
-  const styleInstruction =
-    cfg.responseStyle === 'detailed'
-      ? 'Write 1–2 short paragraphs (Copilot-like), then optionally 2–4 bullets for key steps. Avoid fluff.'
-      : 'Write concise bullets (3–8 bullets). Keep it short.';
-  const body = {
+  const body = buildProviderBody(cfg.provider, {
     model: cfg.model,
-    temperature: 0.2,
-    messages: [
-      {
-        role: 'system',
-        content:
-          'You are Code Coach. Output MUST be valid JSON matching this TypeScript type: ' +
-          '{ explanationMarkdown: string; claims?: { diagnosticCodes?: number[]; localVariables?: string[] }; confidence?: "high"|"medium"|"low" }. ' +
-          'No extra keys. No prose outside JSON. Do not wrap JSON in markdown code fences. Do not include chain-of-thought. ' +
-          `Style: ${styleInstruction} ` +
-          'Use plain-English explanations.'
-      },
-      {
-        role: 'user',
-        content: buildUserPrompt(input, cfg.responseStyle)
-      }
-    ]
-  };
+    temperature: cfg.temperature,
+    maxTokens: cfg.maxTokens,
+    systemPrompt,
+    userPrompt
+  });
 
   const res = await fetch(url, {
     method: 'POST',
@@ -76,9 +56,9 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
   }
 
   const raw: any = await res.json();
-  const content: unknown = raw?.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) {
-    throw new Error('AI response missing choices[0].message.content.');
+  const content = extractProviderText(cfg.provider, raw);
+  if (!content || !content.trim()) {
+    throw new Error(`AI response missing text content for provider ${cfg.provider}.`);
   }
 
   // Many models ignore the "JSON only" instruction and wrap JSON in ```json fences.
@@ -90,6 +70,104 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
     explanationMarkdown: content.trim(),
     confidence: 'low'
   };
+}
+
+type ProviderBodyInput = {
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  systemPrompt: string;
+  userPrompt: string;
+};
+
+function buildProviderBody(provider: AiProvider, input: ProviderBodyInput): Record<string, unknown> {
+  switch (provider) {
+    case 'anthropic':
+      return {
+        model: input.model,
+        max_tokens: input.maxTokens,
+        temperature: input.temperature,
+        system: input.systemPrompt,
+        messages: [{ role: 'user', content: input.userPrompt }]
+      };
+    case 'gemini':
+      return {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${input.systemPrompt}\n\n${input.userPrompt}` }]
+          }
+        ],
+        generationConfig: {
+          temperature: input.temperature,
+          maxOutputTokens: input.maxTokens
+        }
+      };
+    case 'openai':
+    case 'openrouter':
+    default:
+      return {
+        model: input.model,
+        temperature: input.temperature,
+        max_tokens: input.maxTokens,
+        messages: [
+          { role: 'system', content: input.systemPrompt },
+          { role: 'user', content: input.userPrompt }
+        ]
+      };
+  }
+}
+
+function buildHeaders(cfg: AiConfig, apiKey: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...cfg.extraHeaders
+  };
+
+  const headerValue = cfg.authScheme ? `${cfg.authScheme} ${apiKey}` : apiKey;
+  headers[cfg.authHeader || 'Authorization'] = headerValue;
+  return headers;
+}
+
+function resolveEndpointPath(cfg: AiConfig): string {
+  if (cfg.endpointPath.includes('{model}')) {
+    return cfg.endpointPath.replace('{model}', encodeURIComponent(cfg.model));
+  }
+  return cfg.endpointPath;
+}
+
+function extractProviderText(provider: AiProvider, raw: any): string | undefined {
+  switch (provider) {
+    case 'anthropic':
+      return raw?.content?.[0]?.text;
+    case 'gemini': {
+      const parts = raw?.candidates?.[0]?.content?.parts;
+      if (!Array.isArray(parts)) return undefined;
+      return parts
+        .map((p: any) => (typeof p?.text === 'string' ? p.text : ''))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+    }
+    case 'openai':
+    case 'openrouter':
+    default:
+      return raw?.choices?.[0]?.message?.content;
+  }
+}
+
+function buildSystemPrompt(responseStyle: 'concise' | 'detailed'): string {
+  const styleInstruction =
+    responseStyle === 'detailed'
+      ? 'Write 1–2 short paragraphs (Copilot-like), then optionally 2–4 bullets for key steps. Avoid fluff.'
+      : 'Write concise bullets (3–8 bullets). Keep it short.';
+  return (
+    'You are Code Coach. Output MUST be valid JSON matching this TypeScript type: ' +
+    '{ explanationMarkdown: string; claims?: { diagnosticCodes?: number[]; localVariables?: string[] }; confidence?: "high"|"medium"|"low" }. ' +
+    'No extra keys. No prose outside JSON. Do not wrap JSON in markdown code fences. Do not include chain-of-thought. ' +
+    `Style: ${styleInstruction} ` +
+    'Use plain-English explanations.'
+  );
 }
 
 function tryParseAiExplainResultFromText(text: string): AiExplainResult | undefined {
