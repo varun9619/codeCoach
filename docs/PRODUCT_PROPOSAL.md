@@ -266,6 +266,19 @@ Step 6: Add comment in PR: "Fixed SQL injection risk flagged by Code Coach"
 
 ---
 
+## Visual Language (IntelliSense-Parity)
+
+Code Coach uses the same visual language developers already trust in VS Code, so insights feel like native IntelliSense rather than a separate AI layer.
+
+- **Severity colors:** red for errors, yellow for warnings, blue for info; consistent with Problems panel and squiggles.
+- **Hover tooltips:** expanded diagnostic hovers with "Cause / Fix / Source" sections and clickable citations.
+- **Inline hints:** Coach Mode uses inlay-hint styling, lightweight ghost text, and theme tokens for readability.
+- **Quick fixes:** lightbulb actions with diff previews; no auto-apply for risky changes.
+- **Badges and icons:** CodeLens badges (e.g., "Tests: 3 passing, 2 gaps") and smell icons for scanability.
+- **Accessibility:** respects user themes, high-contrast mode, and reduce-motion settings.
+
+---
+
 ## Architecture Sketch
 
 ### High-Level Components
