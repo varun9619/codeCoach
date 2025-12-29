@@ -11,37 +11,47 @@ import { buildDeepDiveData, DeepDiveProvider } from './deepDive';
 let outputChannel: vscode.OutputChannel | undefined;
 let smellDiagnostics: vscode.DiagnosticCollection | undefined;
 let deepDiveProvider: DeepDiveProvider | undefined;
+let deepDiveView: vscode.TreeView<any> | undefined;
 const panels = new Map<string, vscode.WebviewPanel>();
 
 export function activate(context: vscode.ExtensionContext) {
-  outputChannel = vscode.window.createOutputChannel('Code Coach');
-  smellDiagnostics = vscode.languages.createDiagnosticCollection('codeCoach.smells');
-  deepDiveProvider = new DeepDiveProvider();
+  // Early console log for debugging - appears in Debug Console
+  console.log('[Code Coach] Activate function called');
 
-  // Startup logging for debugging
-  outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  outputChannel.appendLine('🚀 Code Coach activated!');
-  outputChannel.appendLine(`   Version: ${context.extension.packageJSON.version}`);
-  outputChannel.appendLine(`   Workspace: ${vscode.workspace.name ?? 'No workspace'}`);
-  outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  outputChannel.appendLine('');
-  outputChannel.appendLine('Commands available:');
-  outputChannel.appendLine('  • Code Coach: Explain Selection');
-  outputChannel.appendLine('  • Code Coach: Explain Diagnostic');
-  outputChannel.appendLine('  • Code Coach: Explain Last Exception');
-  outputChannel.appendLine('  • Code Coach: Trace Diagnostic Origin');
-  outputChannel.appendLine('  • Code Coach: Show Code Smells');
-  outputChannel.appendLine('  • Code Coach: Deep Dive');
-  outputChannel.appendLine('  • Code Coach: Set/Clear AI API Key');
-  outputChannel.appendLine('');
-  outputChannel.show(true);
+  try {
+    outputChannel = vscode.window.createOutputChannel('Code Coach');
+    smellDiagnostics = vscode.languages.createDiagnosticCollection('codeCoach.smells');
+    deepDiveProvider = new DeepDiveProvider();
 
-  const runtime = registerRuntimeTracing(context, outputChannel);
+    // Startup logging for debugging
+    outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    outputChannel.appendLine('🚀 Code Coach activated!');
+    outputChannel.appendLine(`   Version: ${context.extension.packageJSON.version}`);
+    outputChannel.appendLine(`   Workspace: ${vscode.workspace.name ?? 'No workspace'}`);
+    outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    outputChannel.appendLine('');
+    outputChannel.appendLine('Commands available:');
+    outputChannel.appendLine('  • Code Coach: Explain Selection');
+    outputChannel.appendLine('  • Code Coach: Explain Diagnostic');
+    outputChannel.appendLine('  • Code Coach: Explain Last Exception');
+    outputChannel.appendLine('  • Code Coach: Trace Diagnostic Origin');
+    outputChannel.appendLine('  • Code Coach: Show Code Smells');
+    outputChannel.appendLine('  • Code Coach: Deep Dive');
+    outputChannel.appendLine('  • Code Coach: Set/Clear AI API Key');
+    outputChannel.appendLine('');
+    outputChannel.show(true);
+
+    console.log('[Code Coach] Output channel created and shown');
+
+    // Also show a VS Code notification for visibility
+    vscode.window.showInformationMessage('Code Coach extension activated!');
+
+    const runtime = registerRuntimeTracing(context, outputChannel);
 
   context.subscriptions.push(
     outputChannel,
     smellDiagnostics,
-    vscode.window.createTreeView('codeCoach.deepDive', { treeDataProvider: deepDiveProvider }),
+    (deepDiveView = vscode.window.createTreeView('codeCoach.deepDive', { treeDataProvider: deepDiveProvider })),
     vscode.commands.registerCommand('codeCoach.explainSelection', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
@@ -106,7 +116,7 @@ export function activate(context: vscode.ExtensionContext) {
         explanation += `\n\nAI was enabled but not used because the AI request failed:\n- ${aiFailure}`;
       }
 
-      presentResult('Code Coach: Explain Selection', 'codeCoach.explainSelection', explanation);
+      presentResult('Code Coach: Explain Selection', 'codeCoach.ui.explainSelection', explanation);
     }),
 
     vscode.commands.registerCommand('codeCoach.explainDiagnostic', async () => {
@@ -126,7 +136,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const msg = explainDiagnostic(diag, editor.document.languageId);
-      presentResult('Code Coach: Explain Diagnostic', 'codeCoach.explainDiagnostic', msg);
+      presentResult('Code Coach: Explain Diagnostic', 'codeCoach.ui.explainDiagnostic', msg);
     }),
 
     vscode.commands.registerCommand('codeCoach.traceDiagnosticOrigin', async () => {
@@ -145,8 +155,14 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const report = await buildDiagnosticOriginReport(editor.document, diag);
-      presentResult('Code Coach: Trace Diagnostic Origin', 'codeCoach.traceDiagnosticOrigin', report);
+      const data = await buildDiagnosticOriginData(editor.document, diag);
+      const surface = getUiSurface('codeCoach.ui.traceDiagnosticOrigin');
+      if (surface === 'panel') {
+        showTraceOriginPanel(data);
+      } else {
+        const report = renderDiagnosticOriginReport(data);
+        presentResult('Code Coach: Trace Diagnostic Origin', 'codeCoach.ui.traceDiagnosticOrigin', report);
+      }
     }),
 
     vscode.commands.registerCommand('codeCoach.showSmells', async () => {
@@ -167,7 +183,7 @@ export function activate(context: vscode.ExtensionContext) {
       smellDiagnostics?.set(editor.document.uri, diagnostics);
 
       const report = formatSmellReport(editor.document, smells);
-      presentResult('Code Coach: Code Smells', 'codeCoach.codeSmells', report);
+      presentResult('Code Coach: Code Smells', 'codeCoach.ui.codeSmells', report);
     }),
 
     vscode.commands.registerCommand('codeCoach.deepDive', async () => {
@@ -177,14 +193,28 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const data = await buildDeepDiveData(editor.document, editor.selection.active);
-      if (!data) {
-        vscode.window.showInformationMessage('No symbol found at the cursor.');
-        return;
-      }
+      try {
+        const data = await buildDeepDiveData(editor.document, editor.selection.active);
+        if (!data) {
+          vscode.window.showInformationMessage('No symbol found at the cursor.');
+          return;
+        }
 
-      deepDiveProvider?.setData(data);
-      vscode.window.showInformationMessage(`Deep Dive ready for ${data.overview.name}.`);
+        deepDiveProvider?.setData(data);
+        await vscode.commands.executeCommand('workbench.view.explorer');
+
+        const rootItems = deepDiveProvider?.getRootItems() ?? [];
+        if (rootItems.length > 0 && deepDiveView) {
+          await deepDiveView.reveal(rootItems[0], { focus: false, select: false, expand: 1 });
+        }
+
+        vscode.window.showInformationMessage(`Deep Dive ready for ${data.overview.name}.`);
+      } catch (err: any) {
+        const message = err instanceof Error ? err.message : String(err);
+        outputChannel?.appendLine(`Deep Dive failed: ${message}`);
+        outputChannel?.show(true);
+        vscode.window.showErrorMessage('Deep Dive failed. See Code Coach output for details.');
+      }
     }),
 
     vscode.commands.registerCommand('codeCoach.openLocation', async (uri: vscode.Uri, range: vscode.Range) => {
@@ -231,7 +261,7 @@ export function activate(context: vscode.ExtensionContext) {
         explanation += `\n\nAI was enabled but not used because the AI request failed:\n- ${aiFailure}`;
       }
 
-      presentResult('Code Coach: Explain Last Exception', 'codeCoach.runtimeException', explanation);
+      presentResult('Code Coach: Explain Last Exception', 'codeCoach.ui.runtimeException', explanation);
     }),
 
     vscode.commands.registerCommand('codeCoach.ai.setApiKey', async () => {
@@ -297,6 +327,13 @@ export function activate(context: vscode.ExtensionContext) {
       hoverProvider
     )
   );
+
+    console.log('[Code Coach] Activation complete - all commands registered');
+  } catch (error) {
+    console.error('[Code Coach] ACTIVATION FAILED:', error);
+    vscode.window.showErrorMessage(`Code Coach failed to activate: ${error}`);
+    throw error; // Re-throw to mark activation as failed
+  }
 }
 
 function parseRuntimeReport(report: string): { stoppedAt?: string; locals?: Array<{ name: string; value: string; type?: string }> } {
@@ -382,68 +419,6 @@ function findEnclosingSymbol(symbols: vscode.DocumentSymbol[], position: vscode.
   return undefined;
 }
 
-async function buildDiagnosticOriginReport(
-  document: vscode.TextDocument,
-  diag: vscode.Diagnostic
-): Promise<string> {
-  const out: string[] = [];
-  const location = formatRangeLocation(document, diag.range);
-  const lineText = document.lineAt(diag.range.start.line).text.trim();
-
-  out.push('Code Coach — Trace Diagnostic Origin');
-  out.push('');
-  out.push(`Diagnostic: ${diag.message}`);
-  if (diag.source) out.push(`Source: ${diag.source}`);
-  if (diag.code !== undefined) out.push(`Code: ${String(diag.code)}`);
-  out.push(`Location: ${location}`);
-  if (lineText) out.push(`Line: ${lineText}`);
-  out.push('');
-
-  const symbols = (await vscode.commands.executeCommand(
-    'vscode.executeDocumentSymbolProvider',
-    document.uri
-  )) as vscode.DocumentSymbol[] | undefined;
-
-  if (!symbols || symbols.length === 0) {
-    out.push('Notes:');
-    out.push('- No symbols were found in this file, so the trace is limited to the diagnostic location.');
-    return out.join('\n');
-  }
-
-  const enclosing = findEnclosingSymbol(symbols, diag.range.start);
-  if (!enclosing) {
-    out.push('Notes:');
-    out.push('- No enclosing function or method was found for this diagnostic.');
-    return out.join('\n');
-  }
-
-  const symbolLocation = formatRangeLocation(document, enclosing.selectionRange);
-  out.push(`Enclosing symbol: ${enclosing.name} (${symbolKindLabel(enclosing.kind)}) @ ${symbolLocation}`);
-
-  const refs = (await vscode.commands.executeCommand(
-    'vscode.executeReferenceProvider',
-    document.uri,
-    enclosing.selectionRange.start
-  )) as vscode.Location[] | undefined;
-
-  const refList = (refs ?? []).filter(
-    ref => !(ref.uri.fsPath === document.uri.fsPath && ref.range.start.line === enclosing.selectionRange.start.line)
-  );
-  if (refList.length > 0) {
-    out.push('');
-    out.push('Possible callers / references (sample):');
-    for (const ref of refList.slice(0, 10)) {
-      out.push(`- ${formatLocation(ref.uri, ref.range.start)}`);
-    }
-  } else {
-    out.push('');
-    out.push('Notes:');
-    out.push('- No references found for the enclosing symbol. It may be unused or dynamically invoked.');
-  }
-
-  return out.join('\n');
-}
-
 function formatSmellReport(document: vscode.TextDocument, smells: CodeSmell[]): string {
   const out: string[] = [];
   out.push('Code Coach — Code Smells');
@@ -520,6 +495,8 @@ export function deactivate() {
   smellDiagnostics = undefined;
   deepDiveProvider?.setData(undefined);
   deepDiveProvider = undefined;
+  deepDiveView?.dispose();
+  deepDiveView = undefined;
   for (const panel of panels.values()) {
     panel.dispose();
   }
@@ -545,6 +522,25 @@ async function pickAiProvider(): Promise<AiProvider | undefined> {
 
 type UiSurface = 'output' | 'panel';
 
+type TraceOriginData = {
+  diagnostic: {
+    message: string;
+    source?: string;
+    code?: string;
+    location: string;
+    lineText?: string;
+  };
+  enclosing?: {
+    name: string;
+    kind: vscode.SymbolKind;
+    location: string;
+    uri: string;
+    line: number;
+  };
+  references: Array<{ label: string; uri: string; line: number }>;
+  notes: string[];
+};
+
 function presentResult(title: string, settingKey: string, content: string): void {
   const surface = getUiSurface(settingKey);
   if (surface === 'panel') {
@@ -558,7 +554,7 @@ function presentResult(title: string, settingKey: string, content: string): void
 }
 
 function getUiSurface(settingKey: string): UiSurface {
-  const raw = vscode.workspace.getConfiguration('codeCoach').get<string>(settingKey, 'output');
+  const raw = vscode.workspace.getConfiguration().get<string>(settingKey, 'output');
   return raw === 'panel' ? 'panel' : 'output';
 }
 
@@ -629,4 +625,250 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+async function buildDiagnosticOriginData(
+  document: vscode.TextDocument,
+  diag: vscode.Diagnostic
+): Promise<TraceOriginData> {
+  const location = formatRangeLocation(document, diag.range);
+  const lineText = document.lineAt(diag.range.start.line).text.trim();
+
+  const data: TraceOriginData = {
+    diagnostic: {
+      message: diag.message,
+      source: diag.source,
+      code: diag.code !== undefined ? String(diag.code) : undefined,
+      location,
+      lineText: lineText || undefined
+    },
+    references: [],
+    notes: []
+  };
+
+  const symbols = (await vscode.commands.executeCommand(
+    'vscode.executeDocumentSymbolProvider',
+    document.uri
+  )) as vscode.DocumentSymbol[] | undefined;
+
+  if (!symbols || symbols.length === 0) {
+    data.notes.push('No symbols were found in this file, so the trace is limited to the diagnostic location.');
+    return data;
+  }
+
+  const enclosing = findEnclosingSymbol(symbols, diag.range.start);
+  if (!enclosing) {
+    data.notes.push('No enclosing function or method was found for this diagnostic.');
+    return data;
+  }
+
+  data.enclosing = {
+    name: enclosing.name,
+    kind: enclosing.kind,
+    location: formatRangeLocation(document, enclosing.selectionRange),
+    uri: document.uri.fsPath,
+    line: enclosing.selectionRange.start.line + 1
+  };
+
+  const refs = (await vscode.commands.executeCommand(
+    'vscode.executeReferenceProvider',
+    document.uri,
+    enclosing.selectionRange.start
+  )) as vscode.Location[] | undefined;
+
+  const refList = (refs ?? []).filter(
+    ref => !(ref.uri.fsPath === document.uri.fsPath && ref.range.start.line === enclosing.selectionRange.start.line)
+  );
+
+  if (refList.length === 0) {
+    data.notes.push('No references found for the enclosing symbol. It may be unused or dynamically invoked.');
+    return data;
+  }
+
+  data.references = refList.slice(0, 20).map(ref => ({
+    label: `${formatLocation(ref.uri, ref.range.start)}`,
+    uri: ref.uri.fsPath,
+    line: ref.range.start.line + 1
+  }));
+
+  return data;
+}
+
+function renderDiagnosticOriginReport(data: TraceOriginData): string {
+  const out: string[] = [];
+  out.push('Code Coach — Trace Diagnostic Origin');
+  out.push('');
+  out.push(`Diagnostic: ${data.diagnostic.message}`);
+  if (data.diagnostic.source) out.push(`Source: ${data.diagnostic.source}`);
+  if (data.diagnostic.code) out.push(`Code: ${data.diagnostic.code}`);
+  out.push(`Location: ${data.diagnostic.location}`);
+  if (data.diagnostic.lineText) out.push(`Line: ${data.diagnostic.lineText}`);
+
+  if (data.enclosing) {
+    out.push('');
+    out.push(`Enclosing symbol: ${data.enclosing.name} (${symbolKindLabel(data.enclosing.kind)}) @ ${data.enclosing.location}`);
+  }
+
+  if (data.references.length > 0) {
+    out.push('');
+    out.push('Possible callers / references (sample):');
+    for (const ref of data.references) {
+      out.push(`- ${ref.label}`);
+    }
+  }
+
+  if (data.notes.length > 0) {
+    out.push('');
+    out.push('Notes:');
+    for (const note of data.notes) out.push(`- ${note}`);
+  }
+
+  return out.join('\n');
+}
+
+function showTraceOriginPanel(data: TraceOriginData): void {
+  const viewType = 'codeCoach.traceDiagnosticOrigin';
+  let panel = panels.get(viewType);
+  if (!panel) {
+    panel = vscode.window.createWebviewPanel(
+      viewType,
+      'Code Coach: Trace Diagnostic Origin',
+      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+      { enableFindWidget: true, retainContextWhenHidden: true, enableScripts: true }
+    );
+    panel.onDidDispose(() => panels.delete(viewType));
+    panel.webview.onDidReceiveMessage(async message => {
+      if (message?.command !== 'openLocation') return;
+      if (typeof message.uri !== 'string' || typeof message.line !== 'number') return;
+      const uri = vscode.Uri.file(message.uri);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const pos = new vscode.Position(Math.max(0, message.line - 1), 0);
+      await vscode.window.showTextDocument(doc, { selection: new vscode.Range(pos, pos), preview: true });
+    });
+    panels.set(viewType, panel);
+  } else {
+    panel.reveal(undefined, true);
+  }
+
+  panel.title = 'Code Coach: Trace Diagnostic Origin';
+  panel.webview.html = buildTraceOriginHtml(data);
+}
+
+function buildTraceOriginHtml(data: TraceOriginData): string {
+  const referencesHtml =
+    data.references.length > 0
+      ? data.references
+          .map(
+            ref =>
+              `<li><button data-uri="${encodeURIComponent(ref.uri)}" data-line="${ref.line}">${escapeHtml(
+                ref.label
+              )}</button></li>`
+          )
+          .join('')
+      : '<li>No references found</li>';
+
+  const notesHtml =
+    data.notes.length > 0
+      ? `<ul>${data.notes.map(note => `<li>${escapeHtml(note)}</li>`).join('')}</ul>`
+      : '<span class="muted">None</span>';
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trace Diagnostic Origin</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      color: var(--vscode-editor-foreground);
+      background: var(--vscode-editor-background);
+      font-family: var(--vscode-editor-font-family);
+      font-size: var(--vscode-editor-font-size);
+    }
+    h2 {
+      margin: 0 0 12px 0;
+      font-size: 1.1rem;
+      color: var(--vscode-titleBar-activeForeground);
+    }
+    section {
+      margin-bottom: 16px;
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 6px;
+      padding: 12px;
+      background: var(--vscode-sideBar-background);
+    }
+    .label {
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    ul {
+      margin: 6px 0 0 18px;
+      padding: 0;
+    }
+    li {
+      margin-bottom: 6px;
+    }
+    button {
+      background: transparent;
+      border: none;
+      color: var(--vscode-textLink-foreground);
+      cursor: pointer;
+      text-align: left;
+      padding: 0;
+      font: inherit;
+    }
+    button:hover {
+      text-decoration: underline;
+    }
+    .muted {
+      color: var(--vscode-descriptionForeground);
+    }
+    .code {
+      font-family: var(--vscode-editor-font-family);
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h2>Trace Diagnostic Origin</h2>
+  <section>
+    <div class="label">Diagnostic</div>
+    <div>${escapeHtml(data.diagnostic.message)}</div>
+    <div class="muted">${escapeHtml(data.diagnostic.location)}</div>
+    ${data.diagnostic.code ? `<div class="muted">Code: ${escapeHtml(data.diagnostic.code)}</div>` : ''}
+    ${data.diagnostic.source ? `<div class="muted">Source: ${escapeHtml(data.diagnostic.source)}</div>` : ''}
+    ${data.diagnostic.lineText ? `<pre class="code">${escapeHtml(data.diagnostic.lineText)}</pre>` : ''}
+  </section>
+  <section>
+    <div class="label">Enclosing Symbol</div>
+    ${
+      data.enclosing
+        ? `<div>${escapeHtml(data.enclosing.name)} (${escapeHtml(symbolKindLabel(data.enclosing.kind))})</div>
+           <div class="muted">${escapeHtml(data.enclosing.location)}</div>`
+        : `<span class="muted">Not found</span>`
+    }
+  </section>
+  <section>
+    <div class="label">Possible Callers / References</div>
+    <ul>${referencesHtml}</ul>
+  </section>
+  <section>
+    <div class="label">Notes</div>
+    ${notesHtml}
+  </section>
+  <script>
+    const vscode = acquireVsCodeApi();
+    document.querySelectorAll('button[data-uri]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const uri = btn.getAttribute('data-uri');
+        const line = Number(btn.getAttribute('data-line'));
+        if (!uri || !line) return;
+        vscode.postMessage({ command: 'openLocation', uri: decodeURIComponent(uri), line });
+      });
+    });
+  </script>
+</body>
+</html>`;
 }

@@ -11,18 +11,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:codeCoach.explainSelection",
-    "onCommand:codeCoach.explainDiagnostic",
-    "onCommand:codeCoach.explainLastException",
-    "onCommand:codeCoach.traceDiagnosticOrigin",
-    "onCommand:codeCoach.showSmells",
-    "onCommand:codeCoach.deepDive",
-    "onCommand:codeCoach.ai.setApiKey",
-    "onCommand:codeCoach.ai.clearApiKey",
-    "onLanguage:javascript",
-    "onLanguage:typescript",
-    "onLanguage:javascriptreact",
-    "onLanguage:typescriptreact"
+    "*"
   ],
   "main": "./out/extension.js",
   "contributes": {

@@ -36,10 +36,30 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
   readonly onDidChangeTreeData = this.emitter.event;
 
   private data?: DeepDiveData;
+  private rootItems: DeepDiveItem[] = [];
+  private parentMap = new Map<DeepDiveItem, DeepDiveItem | undefined>();
 
   setData(data?: DeepDiveData): void {
     this.data = data;
+    if (this.data) {
+      this.rootItems = [
+        new DeepDiveItem('Overview', 'section'),
+        new DeepDiveItem('Usages', 'section'),
+        new DeepDiveItem('Blame', 'section'),
+        new DeepDiveItem('Coverage', 'section')
+      ];
+    } else {
+      this.rootItems = [];
+    }
+    this.parentMap.clear();
+    for (const root of this.rootItems) {
+      this.parentMap.set(root, undefined);
+    }
     this.emitter.fire();
+  }
+
+  getRootItems(): DeepDiveItem[] {
+    return this.rootItems;
   }
 
   getTreeItem(element: DeepDiveItem): vscode.TreeItem {
@@ -48,22 +68,19 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
 
   getChildren(element?: DeepDiveItem): vscode.ProviderResult<DeepDiveItem[]> {
     if (!this.data) {
-      return [new DeepDiveItem('Select a symbol and run Code Coach: Deep Dive', 'hint')];
+      const hint = new DeepDiveItem('Select a symbol and run Code Coach: Deep Dive', 'hint');
+      this.parentMap.set(hint, undefined);
+      return [hint];
     }
 
     if (!element) {
-      return [
-        new DeepDiveItem('Overview', 'section'),
-        new DeepDiveItem('Usages', 'section'),
-        new DeepDiveItem('Blame', 'section'),
-        new DeepDiveItem('Coverage', 'section')
-      ];
+      return this.rootItems;
     }
 
     if (element.section === 'overview') {
       const overview = this.data.overview;
       const relPath = vscode.workspace.asRelativePath(overview.filePath);
-      return [
+      const items = [
         new DeepDiveItem(`Symbol: ${overview.name}`, 'item'),
         new DeepDiveItem(`Kind: ${symbolKindLabel(overview.kind)}`, 'item'),
         new DeepDiveItem(`Location: ${relPath}:${overview.range.start.line + 1}`, 'item', {
@@ -71,27 +88,33 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
           range: overview.range
         })
       ];
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
     }
 
     if (element.section === 'usages') {
       if (this.data.usages.length === 0) {
         return [new DeepDiveItem('No usages found', 'item')];
       }
-      return this.data.usages.slice(0, 20).map(loc => {
+      const items = this.data.usages.slice(0, 20).map(loc => {
         const label = `${vscode.workspace.asRelativePath(loc.uri.fsPath)}:${loc.range.start.line + 1}`;
         return new DeepDiveItem(label, 'item', { uri: loc.uri, range: loc.range });
       });
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
     }
 
     if (element.section === 'blame') {
       if (this.data.blame.length === 0) {
         return [new DeepDiveItem('No blame info available', 'item')];
       }
-      return this.data.blame.slice(0, 10).map(entry => {
+      const items = this.data.blame.slice(0, 10).map(entry => {
         const label = `${entry.author} — ${entry.summary}`;
         const description = `L${entry.line} • ${entry.time}`;
         return new DeepDiveItem(label, 'item', undefined, description);
       });
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
     }
 
     if (element.section === 'coverage') {
@@ -105,10 +128,15 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
       if (coverage.uncoveredLines.length > 0) {
         items.push(new DeepDiveItem(`Uncovered lines: ${coverage.uncoveredLines.join(', ')}`, 'item'));
       }
+      for (const item of items) this.parentMap.set(item, element);
       return items;
     }
 
     return [];
+  }
+
+  getParent(element: DeepDiveItem): vscode.ProviderResult<DeepDiveItem> {
+    return this.parentMap.get(element);
   }
 }
 
