@@ -6,6 +6,8 @@ A minimal static-only MVP that helps you understand code and diagnostics.
 
 - **Explain Selection**: highlight code and get a line-by-line plain-English walkthrough.
 - **Explain Diagnostic**: hover on a VS Code diagnostic to see a plain-English explanation + likely causes + fixes.
+- **Trace Diagnostic Origin**: trace a diagnostic back to its enclosing symbol and likely callers.
+- **Show Code Smells**: run a static analysis pass for common performance/maintainability issues.
 
 ## AI (optional)
 
@@ -30,6 +32,8 @@ Settings:
 - Select code → Command Palette → **Code Coach: Explain Selection**
 - Hover over an error underline → see the **Code Coach** hover
 - Command Palette → **Code Coach: Explain Diagnostic** (uses the diagnostic under your cursor, else the first in the file)
+- Command Palette → **Code Coach: Trace Diagnostic Origin**
+- Command Palette → **Code Coach: Show Code Smells**
 
 ## Development
 

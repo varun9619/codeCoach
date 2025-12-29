@@ -5,11 +5,14 @@ import { registerRuntimeTracing } from './runtimeTracing';
 import { AiProvider, clearAiApiKey, getAiConfig, setAiApiKey } from './aiSettings';
 import { aiExplain } from './aiClient';
 import { verifyAiResult } from './aiVerify';
+import { analyzeDocumentForSmells, CodeSmell } from './smells';
 
 let outputChannel: vscode.OutputChannel | undefined;
+let smellDiagnostics: vscode.DiagnosticCollection | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel('Code Coach');
+  smellDiagnostics = vscode.languages.createDiagnosticCollection('codeCoach.smells');
 
   // Startup logging for debugging
   outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -22,6 +25,8 @@ export function activate(context: vscode.ExtensionContext) {
   outputChannel.appendLine('  • Code Coach: Explain Selection');
   outputChannel.appendLine('  • Code Coach: Explain Diagnostic');
   outputChannel.appendLine('  • Code Coach: Explain Last Exception');
+  outputChannel.appendLine('  • Code Coach: Trace Diagnostic Origin');
+  outputChannel.appendLine('  • Code Coach: Show Code Smells');
   outputChannel.appendLine('  • Code Coach: Set/Clear AI API Key');
   outputChannel.appendLine('');
   outputChannel.show(true);
@@ -30,6 +35,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     outputChannel,
+    smellDiagnostics,
     vscode.commands.registerCommand('codeCoach.explainSelection', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
@@ -118,6 +124,51 @@ export function activate(context: vscode.ExtensionContext) {
       const msg = explainDiagnostic(diag, editor.document.languageId);
       outputChannel?.clear();
       outputChannel?.appendLine(msg);
+      outputChannel?.show(true);
+    }),
+
+    vscode.commands.registerCommand('codeCoach.traceDiagnosticOrigin', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage('Open a file to trace a diagnostic.');
+        return;
+      }
+
+      const diagnostics = vscode.languages.getDiagnostics(editor.document.uri);
+      const cursor = editor.selection.active;
+      const diag = diagnostics.find(d => d.range.contains(cursor)) ?? diagnostics[0];
+
+      if (!diag) {
+        vscode.window.showInformationMessage('No diagnostics found in this file.');
+        return;
+      }
+
+      const report = await buildDiagnosticOriginReport(editor.document, diag);
+      outputChannel?.clear();
+      outputChannel?.appendLine(report);
+      outputChannel?.show(true);
+    }),
+
+    vscode.commands.registerCommand('codeCoach.showSmells', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage('Open a file to analyze for code smells.');
+        return;
+      }
+
+      const smells = analyzeDocumentForSmells(editor.document);
+      if (!smells.length) {
+        smellDiagnostics?.set(editor.document.uri, []);
+        vscode.window.showInformationMessage('No code smells detected in this file.');
+        return;
+      }
+
+      const diagnostics = smells.map(smell => toSmellDiagnostic(smell));
+      smellDiagnostics?.set(editor.document.uri, diagnostics);
+
+      const report = formatSmellReport(editor.document, smells);
+      outputChannel?.clear();
+      outputChannel?.appendLine(report);
       outputChannel?.show(true);
     }),
 
@@ -310,9 +361,142 @@ function findEnclosingSymbol(symbols: vscode.DocumentSymbol[], position: vscode.
   return undefined;
 }
 
+async function buildDiagnosticOriginReport(
+  document: vscode.TextDocument,
+  diag: vscode.Diagnostic
+): Promise<string> {
+  const out: string[] = [];
+  const location = formatRangeLocation(document, diag.range);
+  const lineText = document.lineAt(diag.range.start.line).text.trim();
+
+  out.push('Code Coach — Trace Diagnostic Origin');
+  out.push('');
+  out.push(`Diagnostic: ${diag.message}`);
+  if (diag.source) out.push(`Source: ${diag.source}`);
+  if (diag.code !== undefined) out.push(`Code: ${String(diag.code)}`);
+  out.push(`Location: ${location}`);
+  if (lineText) out.push(`Line: ${lineText}`);
+  out.push('');
+
+  const symbols = (await vscode.commands.executeCommand(
+    'vscode.executeDocumentSymbolProvider',
+    document.uri
+  )) as vscode.DocumentSymbol[] | undefined;
+
+  if (!symbols || symbols.length === 0) {
+    out.push('Notes:');
+    out.push('- No symbols were found in this file, so the trace is limited to the diagnostic location.');
+    return out.join('\n');
+  }
+
+  const enclosing = findEnclosingSymbol(symbols, diag.range.start);
+  if (!enclosing) {
+    out.push('Notes:');
+    out.push('- No enclosing function or method was found for this diagnostic.');
+    return out.join('\n');
+  }
+
+  const symbolLocation = formatRangeLocation(document, enclosing.selectionRange);
+  out.push(`Enclosing symbol: ${enclosing.name} (${symbolKindLabel(enclosing.kind)}) @ ${symbolLocation}`);
+
+  const refs = (await vscode.commands.executeCommand(
+    'vscode.executeReferenceProvider',
+    document.uri,
+    enclosing.selectionRange.start
+  )) as vscode.Location[] | undefined;
+
+  const refList = (refs ?? []).filter(
+    ref => !(ref.uri.fsPath === document.uri.fsPath && ref.range.start.line === enclosing.selectionRange.start.line)
+  );
+  if (refList.length > 0) {
+    out.push('');
+    out.push('Possible callers / references (sample):');
+    for (const ref of refList.slice(0, 10)) {
+      out.push(`- ${formatLocation(ref.uri, ref.range.start)}`);
+    }
+  } else {
+    out.push('');
+    out.push('Notes:');
+    out.push('- No references found for the enclosing symbol. It may be unused or dynamically invoked.');
+  }
+
+  return out.join('\n');
+}
+
+function formatSmellReport(document: vscode.TextDocument, smells: CodeSmell[]): string {
+  const out: string[] = [];
+  out.push('Code Coach — Code Smells');
+  out.push('');
+  out.push(`File: ${vscode.workspace.asRelativePath(document.uri.fsPath)}`);
+  out.push(`Detected: ${smells.length}`);
+  out.push('');
+  for (const smell of smells) {
+    const location = formatRangeLocation(document, smell.range);
+    out.push(`${severityLabel(smell.severity)} ${smell.type.toUpperCase()} @ ${location}`);
+    out.push(`- ${smell.message}`);
+    out.push(`- Suggestion: ${smell.suggestion}`);
+    out.push('');
+  }
+  return out.join('\n').trimEnd();
+}
+
+function toSmellDiagnostic(smell: CodeSmell): vscode.Diagnostic {
+  const diag = new vscode.Diagnostic(
+    smell.range,
+    `${smell.message} Suggestion: ${smell.suggestion}`,
+    smell.severity
+  );
+  diag.source = 'Code Coach';
+  diag.code = `smell:${smell.type}`;
+  return diag;
+}
+
+function formatRangeLocation(document: vscode.TextDocument, range: vscode.Range): string {
+  return `${formatLocation(document.uri, range.start)}`;
+}
+
+function formatLocation(uri: vscode.Uri, position: vscode.Position): string {
+  const rel = vscode.workspace.asRelativePath(uri.fsPath);
+  return `${rel}:${position.line + 1}`;
+}
+
+function symbolKindLabel(kind: vscode.SymbolKind): string {
+  switch (kind) {
+    case vscode.SymbolKind.Function:
+      return 'Function';
+    case vscode.SymbolKind.Method:
+      return 'Method';
+    case vscode.SymbolKind.Constructor:
+      return 'Constructor';
+    case vscode.SymbolKind.Class:
+      return 'Class';
+    case vscode.SymbolKind.Module:
+      return 'Module';
+    default:
+      return 'Symbol';
+  }
+}
+
+function severityLabel(severity: vscode.DiagnosticSeverity): string {
+  switch (severity) {
+    case vscode.DiagnosticSeverity.Error:
+      return '❗';
+    case vscode.DiagnosticSeverity.Warning:
+      return '⚠️';
+    case vscode.DiagnosticSeverity.Information:
+      return 'ℹ️';
+    case vscode.DiagnosticSeverity.Hint:
+      return '💡';
+    default:
+      return '•';
+  }
+}
+
 export function deactivate() {
   outputChannel?.dispose();
   outputChannel = undefined;
+  smellDiagnostics?.dispose();
+  smellDiagnostics = undefined;
 }
 
 async function pickAiProvider(): Promise<AiProvider | undefined> {
