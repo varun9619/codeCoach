@@ -430,6 +430,31 @@ Input (code selection / diagnostic / symbol)
 }
 ```
 
+### Bring Your Own Key (BYOK) + Provider Routing
+
+Teams and individuals can use their own API keys for Anthropic, OpenAI, Gemini, or OpenRouter without storing secrets in settings.json.
+
+- **Secret storage:** keys are stored via VS Code `SecretStorage` and referenced by provider (never written to disk configs).
+- **Provider selection:** user chooses provider + model; base URL is configurable for OpenRouter or self-hosted gateways.
+- **Enterprise policy:** admins can allowlist providers, force local-only, or disable cloud entirely.
+
+```json
+{
+  "codeCoach.llm.provider": "anthropic | openai | gemini | openrouter",
+  "codeCoach.llm.model": "claude-3-5-sonnet | gpt-4.1 | gemini-1.5-pro | openrouter/anthropic/claude-3.5-sonnet",
+  "codeCoach.llm.baseUrl": "https://api.anthropic.com",
+  "codeCoach.llm.apiKeySource": "secret | env",
+  "codeCoach.llm.headers": {
+    "HTTP-Referer": "https://codecoach.dev",
+    "X-Title": "Code Coach"
+  }
+}
+```
+
+**Suggested commands:**
+- `Code Coach: Set Provider API Key` (stores key in SecretStorage)
+- `Code Coach: Clear Provider API Key`
+
 ### Prompt Injection Defenses
 
 1. **Sanitization:** Strip comments and strings that match injection patterns before LLM calls
@@ -916,6 +941,21 @@ OUTPUT FORMAT:
   "confidenceLevel": "high|medium|low"
 }
 ```
+
+---
+
+## Appendix H: VS Code Visual API Mapping
+
+| Visual Element | VS Code API | Notes |
+|---------------|-------------|-------|
+| Diagnostics + squiggles | `languages.createDiagnosticCollection`, `DiagnosticSeverity` | Uses editor theme error/warning/info colors |
+| Hover tooltips | `languages.registerHoverProvider` | Styled with `editorHoverWidget.*` theme tokens |
+| CodeLens badges | `languages.registerCodeLensProvider` | Uses `editorCodeLens.*` theme tokens |
+| Inline hints (Coach Mode) | `languages.registerInlayHintsProvider` | Uses `editorInlayHint.*` theme tokens |
+| Quick fixes | `languages.registerCodeActionsProvider` | `CodeActionKind.QuickFix` with diff preview |
+| Trace + smell decorations | `window.createTextEditorDecorationType` | `overviewRulerColor` + gutter markers |
+| Deep Dive sidebar | `window.createTreeView` | Native tree view styling |
+| Call graph panel | `window.createWebviewPanel` | Uses VS Code theme CSS variables |
 
 ---
 
