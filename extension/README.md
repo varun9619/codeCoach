@@ -8,6 +8,7 @@ A minimal static-only MVP that helps you understand code and diagnostics.
 - **Explain Diagnostic**: hover on a VS Code diagnostic to see a plain-English explanation + likely causes + fixes.
 - **Trace Diagnostic Origin**: trace a diagnostic back to its enclosing symbol and likely callers.
 - **Show Code Smells**: run a static analysis pass for common performance/maintainability issues.
+- **Deep Dive**: open a sidebar panel with symbol overview, usages, blame, and coverage (if lcov exists).
 
 ## AI (optional)
 
@@ -34,6 +35,7 @@ Settings:
 - Command Palette → **Code Coach: Explain Diagnostic** (uses the diagnostic under your cursor, else the first in the file)
 - Command Palette → **Code Coach: Trace Diagnostic Origin**
 - Command Palette → **Code Coach: Show Code Smells**
+- Command Palette → **Code Coach: Deep Dive** (uses the symbol under your cursor)
 
 ## Development
 

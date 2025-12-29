@@ -16,6 +16,7 @@
     "onCommand:codeCoach.explainLastException",
     "onCommand:codeCoach.traceDiagnosticOrigin",
     "onCommand:codeCoach.showSmells",
+    "onCommand:codeCoach.deepDive",
     "onCommand:codeCoach.ai.setApiKey",
     "onCommand:codeCoach.ai.clearApiKey",
     "onLanguage:javascript",
@@ -53,6 +54,10 @@
       {
         "command": "codeCoach.ai.clearApiKey",
         "title": "Code Coach: Clear AI API Key"
+      },
+      {
+        "command": "codeCoach.deepDive",
+        "title": "Code Coach: Deep Dive"
       }
     ],
     "menus": {
@@ -61,6 +66,11 @@
           "command": "codeCoach.explainSelection",
           "when": "editorHasSelection && (editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact)",
           "group": "navigation@50"
+        },
+        {
+          "command": "codeCoach.deepDive",
+          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact",
+          "group": "navigation@51"
         }
       ]
     },
@@ -172,6 +182,14 @@
           "description": "Maximum number of local variables to include in runtime explanations."
         }
       }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "codeCoach.deepDive",
+          "name": "Code Coach: Deep Dive"
+        }
+      ]
     }
   },
   "scripts": {

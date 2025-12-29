@@ -6,13 +6,16 @@ import { AiProvider, clearAiApiKey, getAiConfig, setAiApiKey } from './aiSetting
 import { aiExplain } from './aiClient';
 import { verifyAiResult } from './aiVerify';
 import { analyzeDocumentForSmells, CodeSmell } from './smells';
+import { buildDeepDiveData, DeepDiveProvider } from './deepDive';
 
 let outputChannel: vscode.OutputChannel | undefined;
 let smellDiagnostics: vscode.DiagnosticCollection | undefined;
+let deepDiveProvider: DeepDiveProvider | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel('Code Coach');
   smellDiagnostics = vscode.languages.createDiagnosticCollection('codeCoach.smells');
+  deepDiveProvider = new DeepDiveProvider();
 
   // Startup logging for debugging
   outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -27,6 +30,7 @@ export function activate(context: vscode.ExtensionContext) {
   outputChannel.appendLine('  • Code Coach: Explain Last Exception');
   outputChannel.appendLine('  • Code Coach: Trace Diagnostic Origin');
   outputChannel.appendLine('  • Code Coach: Show Code Smells');
+  outputChannel.appendLine('  • Code Coach: Deep Dive');
   outputChannel.appendLine('  • Code Coach: Set/Clear AI API Key');
   outputChannel.appendLine('');
   outputChannel.show(true);
@@ -36,6 +40,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     outputChannel,
     smellDiagnostics,
+    vscode.window.createTreeView('codeCoach.deepDive', { treeDataProvider: deepDiveProvider }),
     vscode.commands.registerCommand('codeCoach.explainSelection', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
@@ -170,6 +175,31 @@ export function activate(context: vscode.ExtensionContext) {
       outputChannel?.clear();
       outputChannel?.appendLine(report);
       outputChannel?.show(true);
+    }),
+
+    vscode.commands.registerCommand('codeCoach.deepDive', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage('Open a file to deep dive on a symbol.');
+        return;
+      }
+
+      const data = await buildDeepDiveData(editor.document, editor.selection.active);
+      if (!data) {
+        vscode.window.showInformationMessage('No symbol found at the cursor.');
+        return;
+      }
+
+      deepDiveProvider?.setData(data);
+      vscode.window.showInformationMessage(`Deep Dive ready for ${data.overview.name}.`);
+    }),
+
+    vscode.commands.registerCommand('codeCoach.openLocation', async (uri: vscode.Uri, range: vscode.Range) => {
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc, {
+        selection: range,
+        preview: true
+      });
     }),
 
     vscode.commands.registerCommand('codeCoach.explainLastException', async () => {
@@ -497,6 +527,8 @@ export function deactivate() {
   outputChannel = undefined;
   smellDiagnostics?.dispose();
   smellDiagnostics = undefined;
+  deepDiveProvider?.setData(undefined);
+  deepDiveProvider = undefined;
 }
 
 async function pickAiProvider(): Promise<AiProvider | undefined> {
