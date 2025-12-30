@@ -24,13 +24,24 @@ import {
   storeTestGaps,
   toTestGapDiagnostic
 } from './testGaps';
-import { buildDeepDiveData, DeepDiveProvider } from './deepDive';
+import {
+  buildDeepDiveData,
+  DeepDiveData,
+  DeepDivePin,
+  DeepDiveProvider,
+  DeepDiveSection,
+  formatDeepDiveMarkdown,
+  serializeDeepDiveData
+} from './deepDive';
 
 let outputChannel: vscode.OutputChannel | undefined;
 let smellDiagnostics: vscode.DiagnosticCollection | undefined;
 let testGapDiagnostics: vscode.DiagnosticCollection | undefined;
 let deepDiveProvider: DeepDiveProvider | undefined;
 let deepDiveView: vscode.TreeView<any> | undefined;
+let lastDeepDiveData: DeepDiveData | undefined;
+let deepDivePins: DeepDivePin[] = [];
+const DEEP_DIVE_PIN_KEY = 'codeCoach.deepDive.pins';
 let smellCodeLensProvider: SmellCodeLensProvider | undefined;
 let testGapCodeLensProvider: TestGapCodeLensProvider | undefined;
 let coachModeProvider: CoachModeInlayProvider | undefined;
@@ -55,6 +66,10 @@ export function activate(context: vscode.ExtensionContext) {
     peekLinkProvider = new PeekCitationLinkProvider();
     initTelemetry(context);
 
+    deepDivePins = loadDeepDivePins(context);
+    deepDiveProvider.setPinned(deepDivePins);
+    applyDeepDiveSectionFilter();
+
     // Startup logging for debugging
     outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     outputChannel.appendLine('🚀 Code Coach activated!');
@@ -71,6 +86,9 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('  • Code Coach: Show Code Smells');
     outputChannel.appendLine('  • Code Coach: Show Test Gaps');
     outputChannel.appendLine('  • Code Coach: Deep Dive');
+    outputChannel.appendLine('  • Code Coach: Pin/Unpin Deep Dive');
+    outputChannel.appendLine('  • Code Coach: Deep Dive Sections');
+    outputChannel.appendLine('  • Code Coach: Export Deep Dive');
     outputChannel.appendLine('  • Code Coach: Set/Clear AI API Key');
     outputChannel.appendLine('');
     outputChannel.show(true);
@@ -389,6 +407,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         deepDiveProvider?.setData(data);
+        lastDeepDiveData = data;
         await vscode.commands.executeCommand('workbench.view.explorer');
 
         const rootItems = deepDiveProvider?.getRootItems() ?? [];
@@ -410,6 +429,128 @@ export function activate(context: vscode.ExtensionContext) {
         outputChannel?.show(true);
         vscode.window.showErrorMessage('Deep Dive failed. See Code Coach output for details.');
       }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.deepDive.pinCurrent', async () => {
+      if (!lastDeepDiveData) {
+        vscode.window.showInformationMessage('Run Deep Dive on a symbol before pinning.');
+        return;
+      }
+      const pin = buildPinFromDeepDive(lastDeepDiveData);
+      if (deepDivePins.some(existing => existing.id === pin.id)) {
+        vscode.window.showInformationMessage('This symbol is already pinned.');
+        return;
+      }
+      deepDivePins = [pin, ...deepDivePins].slice(0, 20);
+      await persistDeepDivePins(context);
+      deepDiveProvider?.setPinned(deepDivePins);
+      vscode.window.showInformationMessage(`Pinned ${pin.name}.`);
+    }),
+
+    vscode.commands.registerCommand('codeCoach.deepDive.unpin', async (pinId?: string) => {
+      if (deepDivePins.length === 0) {
+        vscode.window.showInformationMessage('No pinned symbols to remove.');
+        return;
+      }
+      const targetId =
+        pinId ??
+        (await pickDeepDivePinId(
+          deepDivePins,
+          'Select a pinned symbol to remove'
+        ));
+      if (!targetId) return;
+      deepDivePins = deepDivePins.filter(pin => pin.id !== targetId);
+      await persistDeepDivePins(context);
+      deepDiveProvider?.setPinned(deepDivePins);
+      vscode.window.showInformationMessage('Pinned symbol removed.');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.deepDive.openPinned', async (pinId?: string) => {
+      if (!pinId) {
+        vscode.window.showInformationMessage('No pinned symbol selected.');
+        return;
+      }
+      const pin = deepDivePins.find(entry => entry.id === pinId);
+      if (!pin) {
+        vscode.window.showInformationMessage('Pinned symbol not found.');
+        return;
+      }
+      const uri = vscode.Uri.file(pin.filePath);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const position = new vscode.Position(Math.max(0, pin.line - 1), Math.max(0, pin.character));
+      const editor = await vscode.window.showTextDocument(doc, { preview: true });
+      editor.selection = new vscode.Selection(position, position);
+      const data = await buildDeepDiveData(doc, position);
+      if (!data) {
+        vscode.window.showInformationMessage('Unable to resolve pinned symbol in the current file.');
+        return;
+      }
+      deepDiveProvider?.setData(data);
+      lastDeepDiveData = data;
+      await vscode.commands.executeCommand('workbench.view.explorer');
+      const rootItems = deepDiveProvider?.getRootItems() ?? [];
+      if (rootItems.length > 0 && deepDiveView) {
+        await deepDiveView.reveal(rootItems[0], { focus: false, select: false, expand: 1 });
+      }
+      trackEvent('feature_used', { feature: 'deep_dive_open_pin' });
+    }),
+
+    vscode.commands.registerCommand('codeCoach.deepDive.filterSections', async () => {
+      const sections = getDeepDiveSections();
+      const picked = await vscode.window.showQuickPick(
+        sections.map(section => ({
+          label: section.label,
+          description: section.id,
+          picked: isSectionEnabled(section.id)
+        })),
+        { canPickMany: true, title: 'Deep Dive Sections' }
+      );
+      if (!picked) return;
+      const values = picked
+        .map(item => item.description)
+        .filter((v): v is DeepDiveSection => Boolean(v));
+      if (values.length === 0) {
+        vscode.window.showInformationMessage('Select at least one section to keep it visible.');
+        return;
+      }
+      await vscode.workspace
+        .getConfiguration('codeCoach')
+        .update('deepDive.sections', values, vscode.ConfigurationTarget.Global);
+      applyDeepDiveSectionFilter();
+    }),
+
+    vscode.commands.registerCommand('codeCoach.deepDive.export', async () => {
+      if (!lastDeepDiveData) {
+        vscode.window.showInformationMessage('Run Deep Dive before exporting.');
+        return;
+      }
+      const format = await vscode.window.showQuickPick(
+        [
+          { label: 'Markdown report', description: 'md', value: 'markdown' },
+          { label: 'JSON snapshot', description: 'json', value: 'json' }
+        ],
+        { title: 'Export Deep Dive' }
+      );
+      if (!format) return;
+
+      const defaultExt = format.value === 'markdown' ? 'md' : 'json';
+      const defaultName = `${lastDeepDiveData.overview.name.replace(/[^\w.-]+/g, '_')}.deepdive.${defaultExt}`;
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', defaultName)),
+        filters:
+          format.value === 'markdown'
+            ? { Markdown: ['md'] }
+            : { JSON: ['json'] }
+      });
+      if (!uri) return;
+
+      const content =
+        format.value === 'markdown'
+          ? formatDeepDiveMarkdown(lastDeepDiveData)
+          : JSON.stringify(serializeDeepDiveData(lastDeepDiveData), null, 2);
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf8'));
+      vscode.window.showInformationMessage(`Deep Dive exported to ${vscode.workspace.asRelativePath(uri.fsPath)}.`);
+      trackEvent('feature_used', { feature: 'deep_dive_export', format: format.value });
     }),
 
     vscode.commands.registerCommand('codeCoach.openLocation', async (uri: vscode.Uri, range: vscode.Range) => {
@@ -629,6 +770,9 @@ export function activate(context: vscode.ExtensionContext) {
         trackEvent('coach_mode_toggle', {
           enabled: vscode.workspace.getConfiguration('codeCoach').get<boolean>('coachMode.enabled', false)
         });
+      }
+      if (event.affectsConfiguration('codeCoach.deepDive.sections')) {
+        applyDeepDiveSectionFilter();
       }
     })
   );
@@ -963,6 +1107,104 @@ function getAllowedProviders(): Set<AiProvider> | undefined {
     }
   }
   return allowed.size > 0 ? allowed : undefined;
+}
+
+function getDeepDiveSections(): Array<{ id: DeepDiveSection; label: string }> {
+  return [
+    { id: 'overview', label: 'Overview' },
+    { id: 'usages', label: 'Usages' },
+    { id: 'blame', label: 'Blame' },
+    { id: 'tests', label: 'Tests' },
+    { id: 'coverage', label: 'Coverage' }
+  ];
+}
+
+function isSectionEnabled(section: DeepDiveSection): boolean {
+  const config = vscode.workspace.getConfiguration('codeCoach');
+  const raw = config.get<string[]>('deepDive.sections');
+  if (!raw || raw.length === 0) return true;
+  return raw.map(value => value.trim().toLowerCase()).includes(section);
+}
+
+function applyDeepDiveSectionFilter(): void {
+  const config = vscode.workspace.getConfiguration('codeCoach');
+  const raw = config.get<string[]>('deepDive.sections');
+  if (!raw || raw.length === 0) {
+    deepDiveProvider?.setSectionFilter(undefined);
+    return;
+  }
+  const allowed = new Set<DeepDiveSection>();
+  for (const entry of raw) {
+    const normalized = entry.trim().toLowerCase();
+    if (
+      normalized === 'overview' ||
+      normalized === 'usages' ||
+      normalized === 'blame' ||
+      normalized === 'tests' ||
+      normalized === 'coverage'
+    ) {
+      allowed.add(normalized as DeepDiveSection);
+    }
+  }
+  deepDiveProvider?.setSectionFilter(allowed.size > 0 ? allowed : undefined);
+}
+
+function buildPinFromDeepDive(data: DeepDiveData): DeepDivePin {
+  const line = data.overview.range.start.line + 1;
+  const character = data.overview.range.start.character;
+  const id = `${data.overview.filePath}:${line}:${data.overview.name}`;
+  return {
+    id,
+    name: data.overview.name,
+    kind: data.overview.kind,
+    filePath: data.overview.filePath,
+    line,
+    character,
+    pinnedAt: new Date().toISOString()
+  };
+}
+
+function loadDeepDivePins(context: vscode.ExtensionContext): DeepDivePin[] {
+  const raw = context.workspaceState.get<any[]>(DEEP_DIVE_PIN_KEY, []);
+  if (!Array.isArray(raw)) return [];
+  const pins: DeepDivePin[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    if (
+      typeof entry.id !== 'string' ||
+      typeof entry.name !== 'string' ||
+      typeof entry.filePath !== 'string' ||
+      typeof entry.line !== 'number' ||
+      typeof entry.character !== 'number' ||
+      typeof entry.kind !== 'number'
+    ) {
+      continue;
+    }
+    pins.push({
+      id: entry.id,
+      name: entry.name,
+      kind: entry.kind,
+      filePath: entry.filePath,
+      line: entry.line,
+      character: entry.character,
+      pinnedAt: typeof entry.pinnedAt === 'string' ? entry.pinnedAt : new Date().toISOString()
+    });
+  }
+  return pins;
+}
+
+async function persistDeepDivePins(context: vscode.ExtensionContext): Promise<void> {
+  await context.workspaceState.update(DEEP_DIVE_PIN_KEY, deepDivePins);
+}
+
+async function pickDeepDivePinId(pins: DeepDivePin[], title: string): Promise<string | undefined> {
+  const items = pins.map(pin => ({
+    label: `${pin.name} (${symbolKindLabel(pin.kind)})`,
+    description: `${vscode.workspace.asRelativePath(pin.filePath)}:${pin.line}`,
+    id: pin.id
+  }));
+  const picked = await vscode.window.showQuickPick(items, { title });
+  return picked?.id;
 }
 
 function showInPanel(viewType: string, title: string, content: string): void {

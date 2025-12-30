@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AiConfig, AiProvider, getAiApiKey, getAiConfig } from './aiSettings';
-import { buildOptimizedPrompt } from './promptOptimizer';
+import { buildOptimizedPrompt, PromptOptimizerMode } from './promptOptimizer';
 
 export type AiExplainInput = {
   kind: 'selection' | 'exception';
@@ -47,8 +47,11 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
   const systemPrompt = buildSystemPrompt(cfg.responseStyle);
   const userPrompt = buildUserPrompt(input, cfg.responseStyle);
   const optimizedPrompt = cfg.promptOptimizer
-    ? buildOptimizedPrompt(userPrompt, { includeDebugHeader: cfg.promptDebug })
-    : buildOptimizedPrompt(userPrompt);
+    ? buildOptimizedPrompt(userPrompt, {
+        includeDebugHeader: cfg.promptDebug,
+        mode: cfg.promptOptimizerMode as PromptOptimizerMode
+      })
+    : buildPlainPrompt(userPrompt);
 
   if (cfg.promptDebug) {
     const channel = getPromptDebugChannel();
@@ -62,7 +65,8 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
     temperature: cfg.temperature,
     maxTokens: cfg.maxTokens,
     systemPrompt,
-    userPrompt: optimizedPrompt
+    userPrompt: optimizedPrompt,
+    strictJson: cfg.strictJson
   });
 
   const res = await fetch(url, {
@@ -103,6 +107,7 @@ type ProviderBodyInput = {
   maxTokens: number;
   systemPrompt: string;
   userPrompt: string;
+  strictJson: boolean;
 };
 
 function buildProviderBody(provider: AiProvider, input: ProviderBodyInput): Record<string, unknown> {
@@ -140,7 +145,8 @@ function buildProviderBody(provider: AiProvider, input: ProviderBodyInput): Reco
         messages: [
           { role: 'system', content: input.systemPrompt },
           { role: 'user', content: input.userPrompt }
-        ]
+        ],
+        ...(input.strictJson ? { response_format: { type: 'json_object' } } : {})
       };
   }
 }
@@ -248,8 +254,7 @@ function tryParseAiExplainResultFromText(text: string): AiExplainResult | undefi
 function tryParseJsonObject(candidate: string): AiExplainResult | undefined {
   try {
     const parsed: unknown = JSON.parse(candidate);
-    if (isAiExplainResult(parsed)) return parsed;
-    return undefined;
+    return normalizeAiExplainResult(parsed);
   } catch {
     return undefined;
   }
@@ -353,6 +358,24 @@ function joinUrl(baseUrl: string, path: string): string {
   return `${base}${p}`;
 }
 
+function buildPlainPrompt(input: OptimizerPayload): string {
+  const out: string[] = [];
+  out.push(`Objective: ${input.task}`);
+  out.push(`Audience: ${input.audience}`);
+  out.push(`Output: ${input.outputFormat}`);
+  if (input.style.length > 0) out.push(`Style: ${input.style.join(' ')}`);
+  if (input.constraints.length > 0) out.push(`Constraints: ${input.constraints.join(' ')}`);
+  if (input.evidence.length > 0) {
+    out.push('Evidence:');
+    for (const line of input.evidence) out.push(line);
+  }
+  if (input.codeBlock) {
+    out.push('Code:');
+    out.push(input.codeBlock);
+  }
+  return out.join('\n').trim();
+}
+
 async function safeReadText(res: Response): Promise<string> {
   try {
     return await res.text();
@@ -361,11 +384,28 @@ async function safeReadText(res: Response): Promise<string> {
   }
 }
 
-function isAiExplainResult(x: any): x is AiExplainResult {
-  return (
-    x &&
-    typeof x === 'object' &&
-    typeof x.explanationMarkdown === 'string' &&
-    (x.confidence === undefined || x.confidence === 'high' || x.confidence === 'medium' || x.confidence === 'low')
-  );
+function normalizeAiExplainResult(x: any): AiExplainResult | undefined {
+  if (!x || typeof x !== 'object' || typeof x.explanationMarkdown !== 'string') return undefined;
+  const explanationMarkdown = x.explanationMarkdown.trim();
+  if (!explanationMarkdown) return undefined;
+
+  const claims: AiExplainResult['claims'] = {};
+  const diagnosticCodes = Array.isArray(x.claims?.diagnosticCodes)
+    ? x.claims.diagnosticCodes.filter((c: unknown) => typeof c === 'number')
+    : undefined;
+  if (diagnosticCodes && diagnosticCodes.length > 0) claims.diagnosticCodes = diagnosticCodes;
+
+  const localVariables = Array.isArray(x.claims?.localVariables)
+    ? x.claims.localVariables.filter((v: unknown) => typeof v === 'string')
+    : undefined;
+  if (localVariables && localVariables.length > 0) claims.localVariables = localVariables;
+
+  const confidence =
+    x.confidence === 'high' || x.confidence === 'medium' || x.confidence === 'low' ? x.confidence : undefined;
+
+  return {
+    explanationMarkdown,
+    ...(Object.keys(claims).length > 0 ? { claims } : {}),
+    ...(confidence ? { confidence } : {})
+  };
 }

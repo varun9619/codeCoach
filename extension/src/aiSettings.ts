@@ -18,6 +18,7 @@ export type AiConfig = {
   temperature: number;
   maxTokens: number;
   promptOptimizer: boolean;
+  promptOptimizerMode: 'strict' | 'balanced' | 'compact';
   promptDebug: boolean;
   strictJson: boolean;
 };
@@ -121,6 +122,7 @@ export function getAiConfig(): AiConfig {
     temperature,
     maxTokens,
     promptOptimizer: config.get<boolean>('ai.promptOptimizer', true),
+    promptOptimizerMode: normalizeOptimizerMode(config.get<string>('ai.promptOptimizerMode', 'strict') ?? 'strict'),
     promptDebug: config.get<boolean>('ai.promptDebug', false),
     strictJson: config.get<boolean>('ai.strictJson', false)
   };
@@ -170,6 +172,18 @@ function normalizeProvider(raw: string): AiProvider {
     case 'openrouter':
     default:
       return 'openrouter';
+  }
+}
+
+function normalizeOptimizerMode(raw: string): 'strict' | 'balanced' | 'compact' {
+  switch (raw.trim().toLowerCase()) {
+    case 'balanced':
+      return 'balanced';
+    case 'compact':
+      return 'compact';
+    case 'strict':
+    default:
+      return 'strict';
   }
 }
 

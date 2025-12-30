@@ -59,6 +59,26 @@
       {
         "command": "codeCoach.deepDive",
         "title": "Code Coach: Deep Dive"
+      },
+      {
+        "command": "codeCoach.deepDive.pinCurrent",
+        "title": "Code Coach: Pin Deep Dive"
+      },
+      {
+        "command": "codeCoach.deepDive.unpin",
+        "title": "Code Coach: Unpin Deep Dive"
+      },
+      {
+        "command": "codeCoach.deepDive.filterSections",
+        "title": "Code Coach: Deep Dive Sections"
+      },
+      {
+        "command": "codeCoach.deepDive.export",
+        "title": "Code Coach: Export Deep Dive"
+      },
+      {
+        "command": "codeCoach.deepDive.openPinned",
+        "title": "Code Coach: Open Pinned Deep Dive"
       }
     ],
     "menus": {
@@ -72,6 +92,40 @@
           "command": "codeCoach.deepDive",
           "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
           "group": "navigation@51"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "codeCoach.deepDive.pinCurrent",
+          "when": "view == codeCoach.deepDive",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codeCoach.deepDive.unpin",
+          "when": "view == codeCoach.deepDive",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codeCoach.deepDive.filterSections",
+          "when": "view == codeCoach.deepDive",
+          "group": "navigation@3"
+        },
+        {
+          "command": "codeCoach.deepDive.export",
+          "when": "view == codeCoach.deepDive",
+          "group": "navigation@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "codeCoach.deepDive.openPinned",
+          "when": "view == codeCoach.deepDive && viewItem == deepDivePin",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codeCoach.deepDive.unpin",
+          "when": "view == codeCoach.deepDive && viewItem == deepDivePin",
+          "group": "navigation@2"
         }
       ]
     },
@@ -172,6 +226,16 @@
           "default": true,
           "description": "Enable the prompt optimizer layer for more consistent LLM outputs."
         },
+        "codeCoach.ai.promptOptimizerMode": {
+          "type": "string",
+          "default": "strict",
+          "enum": [
+            "strict",
+            "balanced",
+            "compact"
+          ],
+          "description": "Controls how verbose the prompt optimizer is when structuring LLM requests."
+        },
         "codeCoach.ai.promptDebug": {
           "type": "boolean",
           "default": false,
@@ -258,6 +322,11 @@
           ],
           "default": "output",
           "description": "Where to display Test Gap reports."
+        },
+        "codeCoach.deepDive.sections": {
+          "type": "array",
+          "default": [],
+          "description": "Limit Deep Dive sections to show (overview, usages, blame, tests, coverage). Empty means all."
         },
         "codeCoach.coachMode.enabled": {
           "type": "boolean",

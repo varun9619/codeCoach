@@ -9,9 +9,10 @@ A minimal static-only MVP that helps you understand code and diagnostics.
 - **Diagnostic Quick Fixes**: lightbulb offers optional chaining / non-null assertion / implicit-any fixes where safe.
 - **Trace Diagnostic Origin**: trace a diagnostic back to its enclosing symbol and likely callers.
 - **Trace Stack Trace**: paste a stack trace and see a linked call chain.
-- **Show Code Smells**: run a static analysis pass for common performance/maintainability issues.
+- **Show Code Smells**: run a static analysis pass for common performance/maintainability issues (JS/TS + basic Python/Java heuristics).
 - **Test Gap Finder**: uses coverage files (`lcov.info` or `coverage-final.json`) to highlight uncovered branches and suggest test inputs.
 - **Deep Dive**: open a sidebar panel with symbol overview, usages, blame, tests (heuristic), and coverage (if coverage files exist).
+  - Pin important symbols, filter visible sections, and export a report.
 - **Smell CodeLens + Quick Fixes**: shows smell counts per function and offers safe quick fixes for certain smells.
 - **Test Gap CodeLens + Quick Fixes**: shows branch coverage per function and offers test stub actions for gaps.
 - **Coach Mode (inline hints)**: optional inlay hints that annotate lines with quick explanations.
@@ -33,6 +34,8 @@ Settings:
 - `codeCoach.ai.authHeader` / `codeCoach.ai.authScheme` (override auth header/scheme)
 - `codeCoach.ai.temperature` / `codeCoach.ai.maxTokens`
 - `codeCoach.ai.openrouter.referer` / `codeCoach.ai.openrouter.title` (optional headers)
+- `codeCoach.ai.promptOptimizerMode` (strict | balanced | compact)
+- `codeCoach.ai.strictJson` (enforce JSON-only responses; uses provider JSON mode when supported)
 - UI surfaces:
   - `codeCoach.ui.explainSelection`
   - `codeCoach.ui.explainDiagnostic`
@@ -51,6 +54,8 @@ Settings:
   - `codeCoach.enterprise.auditLogPath`
 - Test gaps:
   - `codeCoach.testGaps.coveragePaths`
+- Deep Dive:
+  - `codeCoach.deepDive.sections`
 
 AI citation behavior:
 - AI explanations are asked to include line citations (e.g., `src/file.ts:42` or `L42`).
@@ -74,6 +79,9 @@ Prompt optimizer layer:
 - Command Palette → **Code Coach: Show Code Smells**
 - Command Palette → **Code Coach: Show Test Gaps**
 - Command Palette → **Code Coach: Deep Dive** (uses the symbol under your cursor)
+- Command Palette → **Code Coach: Pin Deep Dive** / **Unpin Deep Dive**
+- Command Palette → **Code Coach: Deep Dive Sections**
+- Command Palette → **Code Coach: Export Deep Dive**
 - Toggle Coach Mode → Settings: `codeCoach.coachMode.enabled`
 
 ## Development

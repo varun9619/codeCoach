@@ -15,7 +15,9 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
   if (!text.trim()) return [];
 
   const scriptKind = getScriptKind(document.languageId);
-  if (scriptKind === ts.ScriptKind.Unknown) return [];
+  if (scriptKind === ts.ScriptKind.Unknown) {
+    return analyzeTextSmells(document);
+  }
 
   const sourceFile = ts.createSourceFile(document.fileName, text, ts.ScriptTarget.Latest, true, scriptKind);
   const smells: CodeSmell[] = [];
@@ -174,6 +176,80 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
 
   visit(sourceFile, 0);
   return smells;
+}
+
+function analyzeTextSmells(document: vscode.TextDocument): CodeSmell[] {
+  const languageId = document.languageId;
+  if (languageId !== 'python' && languageId !== 'java') return [];
+
+  const smells: CodeSmell[] = [];
+  const isTest = isTestFile(document.uri.fsPath);
+  const lines = document.getText().replace(/\r\n/g, '\n').split('\n');
+
+  const addSmell = (line: number, message: string, suggestion: string, code: string, type: CodeSmell['type']) => {
+    const text = document.lineAt(Math.max(0, Math.min(line, document.lineCount - 1)));
+    smells.push({
+      type,
+      severity: type === 'correctness' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information,
+      code,
+      message,
+      suggestion,
+      range: text.range
+    });
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+
+    if (!isTest) {
+      if (languageId === 'python' && /\bprint\s*\(/.test(trimmed)) {
+        addSmell(i, 'Debug print left in code.', 'Remove the print or replace with structured logging.', 'print-debug', 'maintainability');
+      }
+      if (languageId === 'java' && /\bSystem\.out\.println\s*\(/.test(trimmed)) {
+        addSmell(i, 'System.out.println left in code.', 'Remove or replace with a logger.', 'console-log', 'maintainability');
+      }
+    }
+
+    if (/(TODO|FIXME)/.test(trimmed)) {
+      addSmell(i, 'TODO/FIXME comment indicates unfinished work.', 'Track this work in an issue and remove the comment.', 'todo', 'maintainability');
+    }
+
+    if (languageId === 'python') {
+      if (/^except\s*:/.test(trimmed)) {
+        addSmell(i, 'Bare except catches all errors.', 'Catch specific exception types instead.', 'bare-except', 'correctness');
+      } else if (/^except\s+Exception\b/.test(trimmed)) {
+        addSmell(i, 'Broad exception catch.', 'Catch specific exception types where possible.', 'broad-except', 'correctness');
+      }
+
+      if (/^except\b/.test(trimmed)) {
+        const next = findNextNonEmptyLine(lines, i + 1);
+        if (next && (next.lineText === 'pass' || next.lineText === '...')) {
+          addSmell(i, 'Empty except block swallows errors.', 'Log, rethrow, or handle the exception.', 'empty-except', 'correctness');
+        }
+      }
+    }
+
+    if (languageId === 'java' && /\bcatch\s*\(/.test(trimmed)) {
+      const next = findNextNonEmptyLine(lines, i + 1);
+      if (next && next.lineText === '}') {
+        addSmell(i, 'Empty catch block swallows errors.', 'Log, rethrow, or handle the exception.', 'empty-catch', 'correctness');
+      }
+    }
+  }
+
+  return smells;
+}
+
+function findNextNonEmptyLine(lines: string[], start: number): { index: number; lineText: string } | undefined {
+  for (let i = start; i < lines.length; i += 1) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('#') || trimmed.startsWith('//')) continue;
+    return { index: i, lineText: trimmed };
+  }
+  return undefined;
 }
 
 function isLoop(node: ts.Node): boolean {
