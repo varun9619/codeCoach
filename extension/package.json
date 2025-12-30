@@ -49,6 +49,10 @@
         "title": "Code Coach: Show Test Gaps"
       },
       {
+        "command": "codeCoach.applyDiagnosticFix",
+        "title": "Code Coach: Apply Diagnostic Fix"
+      },
+      {
         "command": "codeCoach.previewSmellFix",
         "title": "Code Coach: Preview Smell Fix"
       },
@@ -402,6 +406,37 @@
           "minimum": 1,
           "maximum": 30,
           "description": "Maximum number of recent commits to show in Deep Dive history."
+        },
+        "codeCoach.performance.prewarmSymbols": {
+          "type": "boolean",
+          "default": false,
+          "description": "Prewarm symbol cache in the background for large repos."
+        },
+        "codeCoach.performance.prewarmFileLimit": {
+          "type": "number",
+          "default": 200,
+          "minimum": 10,
+          "maximum": 2000,
+          "description": "Maximum number of files to index during prewarm."
+        },
+        "codeCoach.performance.prewarmDelayMs": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Delay before background prewarm starts."
+        },
+        "codeCoach.performance.prewarmGlob": {
+          "type": "array",
+          "default": [
+            "**/*.{ts,tsx,js,jsx}"
+          ],
+          "description": "Glob patterns for background prewarm."
+        },
+        "codeCoach.performance.prewarmExclude": {
+          "type": "string",
+          "default": "**/node_modules/**",
+          "description": "Exclude glob for background prewarm."
         },
         "codeCoach.coachMode.enabled": {
           "type": "boolean",

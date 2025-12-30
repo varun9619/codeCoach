@@ -65,6 +65,12 @@ Settings:
   - `codeCoach.deepDive.sections`
   - `codeCoach.deepDive.aiSummary`
   - `codeCoach.deepDive.historyLimit`
+- Performance:
+  - `codeCoach.performance.prewarmSymbols`
+  - `codeCoach.performance.prewarmFileLimit`
+  - `codeCoach.performance.prewarmDelayMs`
+  - `codeCoach.performance.prewarmGlob`
+  - `codeCoach.performance.prewarmExclude`
 
 AI citation behavior:
 - AI explanations are asked to include line citations (e.g., `src/file.ts:42` or `L42`).

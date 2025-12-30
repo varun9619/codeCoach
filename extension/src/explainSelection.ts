@@ -4,6 +4,7 @@ export type ExplainSelectionInput = {
   text: string;
   languageId: string;
   startLineNumber: number; // 1-based in the original document
+  filePath?: string;
 };
 
 export function explainSelection(input: ExplainSelectionInput): string {
@@ -19,6 +20,11 @@ export function explainSelection(input: ExplainSelectionInput): string {
   const out: string[] = [];
   out.push('Code Coach — Explain Selection');
   out.push('');
+  if (input.filePath) {
+    const endLine = input.startLineNumber + lines.length - 1;
+    out.push(`File: ${input.filePath}:${input.startLineNumber}-${endLine}`);
+    out.push('');
+  }
 
   if (constructs.length > 0) {
     out.push('What I see:');

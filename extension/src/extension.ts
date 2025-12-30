@@ -14,6 +14,7 @@ import { TestGapCodeActionProvider, TestGapCodeLensProvider } from './testGapPro
 import { CoachModeInlayProvider } from './coachMode';
 import { getDocumentSymbols, getReferences, invalidateDocumentCache } from './analysisCache';
 import { initTelemetry, trackEvent } from './telemetry';
+import { warmSymbolCache } from './workspaceIndex';
 import {
   BranchSummary,
   TestGap,
@@ -99,8 +100,13 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Also show a VS Code notification for visibility
     vscode.window.showInformationMessage('Code Coach extension activated!');
+    trackEvent('extension.activated', {
+      version: context.extension.packageJSON.version,
+      platform: process.platform
+    });
 
     void maybeShowOnboarding(context);
+    void warmSymbolCache();
 
     const runtime = registerRuntimeTracing(context, outputChannel);
 
@@ -137,6 +143,7 @@ export function activate(context: vscode.ExtensionContext) {
       let explanation: string;
       let modeLabel: 'AI' | 'Static' = 'Static';
       let aiFailure: string | undefined;
+      const relPath = vscode.workspace.asRelativePath(editor.document.uri.fsPath);
       try {
         const ai = await aiExplain(context, {
           kind: 'selection',
@@ -169,7 +176,8 @@ export function activate(context: vscode.ExtensionContext) {
         explanation = explainSelection({
           text,
           languageId: editor.document.languageId,
-          startLineNumber: selection.start.line + 1
+          startLineNumber: selection.start.line + 1,
+          filePath: relPath
         });
       }
 
@@ -178,7 +186,11 @@ export function activate(context: vscode.ExtensionContext) {
         explanation += `\n\n${related}`;
       }
 
-      explanation = `Code Coach (Mode: ${modeLabel})\n` + explanation;
+      if (modeLabel === 'AI') {
+        explanation = `Code Coach (Mode: ${modeLabel})\nFile: ${relPath}:${selection.start.line + 1}-${selection.end.line + 1}\n\n${explanation}`;
+      } else {
+        explanation = `Code Coach (Mode: ${modeLabel})\n` + explanation;
+      }
       if (modeLabel === 'Static' && aiFailure) {
         explanation += `\n\nAI was enabled but not used because the AI request failed:\n- ${aiFailure}`;
       }
@@ -189,6 +201,11 @@ export function activate(context: vscode.ExtensionContext) {
         mode: modeLabel,
         surface: getUiSurface('codeCoach.ui.explainSelection'),
         lines: selection.end.line - selection.start.line + 1
+      });
+      trackEvent('explain.selection.invoked', {
+        languageId: editor.document.languageId,
+        lineCount: selection.end.line - selection.start.line + 1,
+        mode: modeLabel
       });
     }),
 
@@ -209,6 +226,7 @@ export function activate(context: vscode.ExtensionContext) {
       let explanation: string;
       let modeLabel: 'AI' | 'Static' = 'Static';
       let aiFailure: string | undefined;
+      const relPath = vscode.workspace.asRelativePath(editor.document.uri.fsPath);
 
       try {
         const ai = await aiExplain(context, {
@@ -230,7 +248,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
       } catch (err: any) {
         aiFailure = err instanceof Error ? err.message : String(err);
-        explanation = buildWhyWorksFallback(editor.document, text, selection.start.line + 1);
+        explanation = buildWhyWorksFallback(editor.document, text, selection.start.line + 1, relPath);
       }
 
       const related = await buildRelatedSection(editor.document, selection);
@@ -238,7 +256,11 @@ export function activate(context: vscode.ExtensionContext) {
         explanation += `\n\n${related}`;
       }
 
-      explanation = `Code Coach (Mode: ${modeLabel})\n` + explanation;
+      if (modeLabel === 'AI') {
+        explanation = `Code Coach (Mode: ${modeLabel})\nFile: ${relPath}:${selection.start.line + 1}-${selection.end.line + 1}\n\n${explanation}`;
+      } else {
+        explanation = `Code Coach (Mode: ${modeLabel})\n` + explanation;
+      }
       if (modeLabel === 'Static' && aiFailure) {
         explanation += `\n\nAI was enabled but not used because the AI request failed:\n- ${aiFailure}`;
       }
@@ -249,6 +271,11 @@ export function activate(context: vscode.ExtensionContext) {
         mode: modeLabel,
         surface: getUiSurface('codeCoach.ui.explainWhyWorks'),
         lines: selection.end.line - selection.start.line + 1
+      });
+      trackEvent('explain.why.invoked', {
+        languageId: editor.document.languageId,
+        lineCount: selection.end.line - selection.start.line + 1,
+        mode: modeLabel
       });
     }),
 
@@ -268,12 +295,65 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const msg = explainDiagnostic(diag, editor.document.languageId);
-      presentResult('Code Coach: Explain Diagnostic', 'codeCoach.ui.explainDiagnostic', msg);
+      const relPath = vscode.workspace.asRelativePath(editor.document.uri.fsPath);
+      const locationLabel = `${relPath}:${diag.range.start.line + 1}`;
+      const snippet = buildDiagnosticSnippet(editor.document, diag.range);
+      const snippetStart = Math.max(0, diag.range.start.line - 2) + 1;
+      const snippetEnd = Math.min(editor.document.lineCount, diag.range.end.line + 3);
+
+      let explanation: string;
+      let modeLabel: 'AI' | 'Static' = 'Static';
+      let aiFailure: string | undefined;
+
+      try {
+        const ai = await aiExplain(context, {
+          kind: 'diagnostic',
+          languageId: editor.document.languageId,
+          code: snippet,
+          filePath: editor.document.uri.fsPath,
+          startLineNumber: snippetStart,
+          endLineNumber: snippetEnd,
+          diagnostics: [
+            {
+              message: diag.message,
+              code: typeof diag.code === 'string' || typeof diag.code === 'number' ? diag.code : (diag.code as any)?.value
+            }
+          ]
+        });
+        const verification = verifyAiResult(ai, {
+          lineRange: { start: snippetStart, end: snippetEnd },
+          requireCitations: true
+        });
+        modeLabel = 'AI';
+        explanation = ai.explanationMarkdown;
+        if (!verification.verified) {
+          explanation += `\n\n---\nVerification notes:\n${verification.notes.map(n => `- ${n}`).join('\n')}`;
+        }
+      } catch (err: any) {
+        aiFailure = err instanceof Error ? err.message : String(err);
+        explanation = explainDiagnostic(diag, editor.document.languageId, locationLabel);
+      }
+
+      if (modeLabel === 'AI') {
+        explanation = `Code Coach (Mode: ${modeLabel})\nFile: ${locationLabel}\n\n${explanation}`;
+      } else {
+        explanation = `Code Coach (Mode: ${modeLabel})\n` + explanation;
+      }
+
+      if (modeLabel === 'Static' && aiFailure) {
+        explanation += `\n\nAI was enabled but not used because the AI request failed:\n- ${aiFailure}`;
+      }
+
+      presentResult('Code Coach: Explain Diagnostic', 'codeCoach.ui.explainDiagnostic', explanation);
       trackEvent('feature_used', {
         feature: 'explain_diagnostic',
         surface: getUiSurface('codeCoach.ui.explainDiagnostic'),
         code: typeof diag.code === 'number' ? diag.code : undefined
+      });
+      trackEvent('explain.diagnostic.invoked', {
+        languageId: editor.document.languageId,
+        code: typeof diag.code === 'number' ? diag.code : undefined,
+        mode: modeLabel
       });
     }),
 
@@ -399,6 +479,9 @@ export function activate(context: vscode.ExtensionContext) {
         surface: getUiSurface('codeCoach.ui.codeSmells'),
         count: reportSmells.length
       });
+      trackEvent('smell.detected', {
+        count: reportSmells.length
+      });
     }),
 
     vscode.commands.registerCommand('codeCoach.showTestGaps', async (scope?: vscode.Range) => {
@@ -454,6 +537,10 @@ export function activate(context: vscode.ExtensionContext) {
         branches: summaryScope.totalBranches,
         uncovered: summaryScope.totalBranches - summaryScope.coveredBranches
       });
+      trackEvent('testgap.detected', {
+        branches: summaryScope.totalBranches,
+        uncovered: summaryScope.totalBranches - summaryScope.coveredBranches
+      });
     }),
 
     vscode.commands.registerCommand('codeCoach.deepDive', async () => {
@@ -488,11 +575,18 @@ export function activate(context: vscode.ExtensionContext) {
           tests: data.tests.length,
           coverage: Boolean(data.coverage)
         });
+        trackEvent('deepdive.opened', {
+          symbol: data.overview.name,
+          usages: data.usages.length,
+          history: data.history.length,
+          tests: data.tests.length
+        });
       } catch (err: any) {
         const message = err instanceof Error ? err.message : String(err);
         outputChannel?.appendLine(`Deep Dive failed: ${message}`);
         outputChannel?.show(true);
         vscode.window.showErrorMessage('Deep Dive failed. See Code Coach output for details.');
+        trackEvent('error.occurred', { errorType: 'deep_dive', message });
       }
     }),
 
@@ -637,6 +731,16 @@ export function activate(context: vscode.ExtensionContext) {
         preview: true
       });
     }),
+
+    vscode.commands.registerCommand(
+      'codeCoach.applyDiagnosticFix',
+      async (uri: vscode.Uri, position: vscode.Position, insertText: string, fixType: string) => {
+        const edit = new vscode.WorkspaceEdit();
+        edit.insert(uri, position, insertText);
+        await vscode.workspace.applyEdit(edit);
+        trackEvent('diagnostic.fix.applied', { fixType });
+      }
+    ),
 
     vscode.commands.registerCommand(
       'codeCoach.previewSmellFix',
@@ -805,9 +909,14 @@ export function activate(context: vscode.ExtensionContext) {
         return null;
       }
 
-      const explanation = explainDiagnostic(diag, document.languageId);
+      const locationLabel = `${vscode.workspace.asRelativePath(document.uri.fsPath)}:${diag.range.start.line + 1}`;
+      const explanation = explainDiagnostic(diag, document.languageId, locationLabel);
       const md = new vscode.MarkdownString(explanation);
       md.isTrusted = false;
+      trackEvent('diagnostic.hover.shown', {
+        languageId: document.languageId,
+        code: typeof diag.code === 'number' ? diag.code : undefined
+      });
       return new vscode.Hover(md, diag.range);
     }
   };
@@ -903,6 +1012,7 @@ export function activate(context: vscode.ExtensionContext) {
     console.log('[Code Coach] Activation complete - all commands registered');
   } catch (error) {
     console.error('[Code Coach] ACTIVATION FAILED:', error);
+    trackEvent('error.occurred', { errorType: 'activation', message: String(error) });
     vscode.window.showErrorMessage(`Code Coach failed to activate: ${error}`);
     throw error; // Re-throw to mark activation as failed
   }
@@ -1422,7 +1532,8 @@ function buildStaticDeepDiveSummary(data: DeepDiveData): string {
 function buildWhyWorksFallback(
   document: vscode.TextDocument,
   text: string,
-  startLineNumber: number
+  startLineNumber: number,
+  filePath: string
 ): string {
   const out: string[] = [];
   out.push('Code Coach — Why This Works');
@@ -1442,8 +1553,16 @@ function buildWhyWorksFallback(
   out.push('- Silent failures in async calls or missing error handling.');
   out.push('');
   out.push('Static walkthrough:');
-  out.push(explainSelection({ text, languageId: document.languageId, startLineNumber }));
+  out.push(explainSelection({ text, languageId: document.languageId, startLineNumber, filePath }));
   return out.join('\n');
+}
+
+function buildDiagnosticSnippet(document: vscode.TextDocument, range: vscode.Range): string {
+  const startLine = Math.max(0, range.start.line - 2);
+  const endLine = Math.min(document.lineCount - 1, range.end.line + 2);
+  const endText = document.lineAt(endLine).text;
+  const snippetRange = new vscode.Range(startLine, 0, endLine, endText.length);
+  return document.getText(snippetRange).trim() || document.lineAt(range.start.line).text;
 }
 
 async function maybeShowOnboarding(context: vscode.ExtensionContext): Promise<void> {
@@ -1655,6 +1774,9 @@ async function captureFeedback(helpful: boolean): Promise<void> {
   });
   if (!picked) return;
   trackEvent('feedback', { helpful, feature: picked.value });
+  if (picked.value === 'explain_selection') {
+    trackEvent('explain.selection.feedback', { helpful });
+  }
   vscode.window.showInformationMessage('Thanks for the feedback.');
 }
 

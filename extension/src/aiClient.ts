@@ -327,6 +327,11 @@ function buildUserPrompt(input: AiExplainInput, responseStyle: 'concise' | 'deta
     'Only cite lines that appear in the provided snippet.'
   ];
 
+  if (input.kind === 'diagnostic') {
+    task = 'Explain this diagnostic in plain English and propose fixes with citations.';
+    constraints.push('Provide 2-3 fix options ranked by preference.');
+  }
+
   if (input.kind === 'deepDive') {
     task = 'Summarize the symbol for a deep dive panel: intent, responsibilities, risks.';
   }

@@ -55,10 +55,17 @@ function buildOptionalChainingFix(document: vscode.TextDocument, diag: vscode.Di
   if (dotIndex === undefined) return undefined;
   if (dotIndex > 0 && lineText[dotIndex - 1] === '?') return undefined;
 
-  const edit = new vscode.WorkspaceEdit();
-  edit.insert(document.uri, new vscode.Position(diag.range.start.line, dotIndex), '?');
   const action = new vscode.CodeAction('Use optional chaining (?.)', vscode.CodeActionKind.QuickFix);
-  action.edit = edit;
+  action.command = {
+    command: 'codeCoach.applyDiagnosticFix',
+    title: 'Use optional chaining (?.)',
+    arguments: [
+      document.uri,
+      new vscode.Position(diag.range.start.line, dotIndex),
+      '?',
+      'optional-chaining'
+    ]
+  };
   action.diagnostics = [diag];
   action.isPreferred = true;
   return action;
@@ -69,10 +76,17 @@ function buildNonNullAssertionFix(document: vscode.TextDocument, diag: vscode.Di
   if (dotIndex === undefined) return undefined;
   if (dotIndex > 0 && lineText[dotIndex - 1] === '!') return undefined;
 
-  const edit = new vscode.WorkspaceEdit();
-  edit.insert(document.uri, new vscode.Position(diag.range.start.line, dotIndex), '!');
   const action = new vscode.CodeAction('Assert non-null (!)', vscode.CodeActionKind.QuickFix);
-  action.edit = edit;
+  action.command = {
+    command: 'codeCoach.applyDiagnosticFix',
+    title: 'Assert non-null (!)',
+    arguments: [
+      document.uri,
+      new vscode.Position(diag.range.start.line, dotIndex),
+      '!',
+      'non-null-assertion'
+    ]
+  };
   action.diagnostics = [diag];
   return action;
 }
@@ -83,10 +97,12 @@ function buildImplicitAnyFix(document: vscode.TextDocument, diag: vscode.Diagnos
   const after = line.slice(range.end.character, range.end.character + 2);
   if (after.startsWith(':')) return undefined;
 
-  const edit = new vscode.WorkspaceEdit();
-  edit.insert(document.uri, range.end, ': any');
   const action = new vscode.CodeAction('Add type annotation (: any)', vscode.CodeActionKind.QuickFix);
-  action.edit = edit;
+  action.command = {
+    command: 'codeCoach.applyDiagnosticFix',
+    title: 'Add type annotation (: any)',
+    arguments: [document.uri, range.end, ': any', 'implicit-any']
+  };
   action.diagnostics = [diag];
   return action;
 }

@@ -1,5 +1,5 @@
 export type AiExplainInput = {
-  kind: 'selection' | 'exception' | 'deepDive' | 'why';
+  kind: 'selection' | 'exception' | 'diagnostic' | 'deepDive' | 'why';
   languageId: string;
   code: string;
   filePath?: string;

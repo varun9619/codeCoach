@@ -1,9 +1,14 @@
 import * as vscode from 'vscode';
 
-export function explainDiagnostic(diag: vscode.Diagnostic, languageId: string): string {
+export function explainDiagnostic(
+  diag: vscode.Diagnostic,
+  languageId: string,
+  locationLabel?: string
+): string {
   const header: string[] = [];
   header.push('Code Coach — Explain Diagnostic');
   header.push('');
+  if (locationLabel) header.push(`Location: ${locationLabel}`);
   header.push(`Message: ${diag.message}`);
   if (diag.source) header.push(`Source: ${diag.source}`);
   if (diag.code !== undefined) header.push(`Code: ${String(diag.code)}`);
@@ -53,6 +58,20 @@ function explainByKnownPatterns(diag: vscode.Diagnostic, languageId: string): Di
       };
     }
 
+    if (code === 2307) {
+      return {
+        causes: [
+          'TypeScript cannot resolve the module path or does not have type declarations for it.',
+          'The module is missing from node_modules or tsconfig path mappings.'
+        ],
+        fixes: [
+          'Check the import path and file name casing.',
+          'Install the package or its types (e.g., `npm i` or `npm i -D @types/...`).',
+          'If using path aliases, confirm `tsconfig.json` paths/baseUrl are correct.'
+        ]
+      };
+    }
+
     if (code === 2339) {
       return {
         causes: [
@@ -63,6 +82,19 @@ function explainByKnownPatterns(diag: vscode.Diagnostic, languageId: string): Di
           'Confirm the object’s type and the property name.',
           'Narrow the type (e.g., with an if check, "in" check, or a type guard).',
           'Update the type/interface so the property is declared, or fix the data shape.'
+        ]
+      };
+    }
+
+    if (code === 2341) {
+      return {
+        causes: [
+          'You are accessing a private property outside of its declaring class.'
+        ],
+        fixes: [
+          'Access the value through a public method or getter.',
+          'If appropriate, change the visibility to protected/public.',
+          'Refactor to avoid reaching into private state.'
         ]
       };
     }
@@ -92,6 +124,30 @@ function explainByKnownPatterns(diag: vscode.Diagnostic, languageId: string): Di
       };
     }
 
+    if (code === 2355) {
+      return {
+        causes: [
+          'A function that is declared to return a value is missing a return on some code paths.'
+        ],
+        fixes: [
+          'Ensure every code path returns a value.',
+          'Change the return type to void if returning a value is not required.'
+        ]
+      };
+    }
+
+    if (code === 2367) {
+      return {
+        causes: [
+          'You are comparing two types that do not overlap, which is likely a bug.'
+        ],
+        fixes: [
+          'Check the types involved and correct the comparison.',
+          'Narrow the types before comparison or adjust the types so they overlap.'
+        ]
+      };
+    }
+
     if (code === 2532 || code === 2531) {
       return {
         causes: [
@@ -117,6 +173,42 @@ function explainByKnownPatterns(diag: vscode.Diagnostic, languageId: string): Di
       };
     }
 
+    if (code === 2741) {
+      return {
+        causes: [
+          'A required property is missing from the object you are assigning.'
+        ],
+        fixes: [
+          'Add the missing property with the correct type.',
+          'If the property should be optional, update the type definition.'
+        ]
+      };
+    }
+
+    if (code === 2488) {
+      return {
+        causes: [
+          'You are iterating with `for..of` over a value that is not iterable.'
+        ],
+        fixes: [
+          'Ensure the value is an array or implements Symbol.iterator.',
+          'Convert it to an array before iterating.'
+        ]
+      };
+    }
+
+    if (code === 2551) {
+      return {
+        causes: [
+          'You are accessing a property that does not exist; TypeScript suggests a similar name.'
+        ],
+        fixes: [
+          'Use the suggested property name if it is correct.',
+          'Update the type/interface to include the missing property if needed.'
+        ]
+      };
+    }
+
     if (code === 7006) {
       return {
         causes: [
@@ -129,6 +221,30 @@ function explainByKnownPatterns(diag: vscode.Diagnostic, languageId: string): Di
       };
     }
 
+    if (code === 7005) {
+      return {
+        causes: [
+          'A variable implicitly has type `any` because no type is inferred.'
+        ],
+        fixes: [
+          'Add an explicit type annotation.',
+          'Initialize the variable so TypeScript can infer the type.'
+        ]
+      };
+    }
+
+    if (code === 7031) {
+      return {
+        causes: [
+          'A binding element (e.g., destructuring) implicitly has `any` type.'
+        ],
+        fixes: [
+          'Add a type annotation to the destructured parameter or object.',
+          'Define a type for the object being destructured.'
+        ]
+      };
+    }
+
     if (code === 2554) {
       return {
         causes: [
@@ -137,6 +253,18 @@ function explainByKnownPatterns(diag: vscode.Diagnostic, languageId: string): Di
         fixes: [
           'Check the function signature and pass the required arguments.',
           'If some arguments are optional, ensure the signature marks them as optional.'
+        ]
+      };
+    }
+
+    if (code === 18047 || code === 18048) {
+      return {
+        causes: [
+          'A value is possibly null or undefined and is being used without a guard.'
+        ],
+        fixes: [
+          'Add a null/undefined check or default value.',
+          'Use optional chaining or non-null assertion if safe.'
         ]
       };
     }
