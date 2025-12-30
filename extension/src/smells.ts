@@ -4,6 +4,7 @@ import ts from 'typescript';
 export type CodeSmell = {
   type: 'performance' | 'maintainability' | 'correctness';
   severity: vscode.DiagnosticSeverity;
+  code: string;
   message: string;
   suggestion: string;
   range: vscode.Range;
@@ -27,6 +28,7 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
         smells.push({
           type: 'performance',
           severity: vscode.DiagnosticSeverity.Warning,
+          code: 'nested-loop',
           message: 'Nested loop detected. This can lead to O(n²) performance.',
           suggestion: 'Consider using a Map/Set for lookups or precomputing indexes.',
           range
@@ -45,6 +47,7 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
         smells.push({
           type: 'maintainability',
           severity: vscode.DiagnosticSeverity.Information,
+          code: 'many-params',
           message: `Function has ${paramCount} parameters.`,
           suggestion: 'Consider replacing parameters with a single options object.',
           range
@@ -57,6 +60,7 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
       smells.push({
         type: 'maintainability',
         severity: vscode.DiagnosticSeverity.Information,
+        code: 'explicit-any',
         message: 'Explicit "any" type reduces type safety.',
         suggestion: 'Prefer a specific type or an explicit union/interface.',
         range
@@ -68,10 +72,58 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
       smells.push({
         type: 'correctness',
         severity: vscode.DiagnosticSeverity.Warning,
+        code: 'empty-catch',
         message: 'Empty catch block swallows errors.',
         suggestion: 'Log, rethrow, or handle the error explicitly.',
         range
       });
+    }
+
+    if (ts.isDebuggerStatement(node)) {
+      const range = nodeRange(document, sourceFile, node);
+      smells.push({
+        type: 'maintainability',
+        severity: vscode.DiagnosticSeverity.Information,
+        code: 'debugger',
+        message: 'Debugger statement left in code.',
+        suggestion: 'Remove the debugger statement.',
+        range
+      });
+    }
+
+    if (ts.isCallExpression(node)) {
+      const expr = node.expression;
+      if (
+        ts.isPropertyAccessExpression(expr) &&
+        ts.isIdentifier(expr.expression) &&
+        expr.expression.text === 'console' &&
+        expr.name.text === 'log'
+      ) {
+        const range = nodeRange(document, sourceFile, node);
+        smells.push({
+          type: 'maintainability',
+          severity: vscode.DiagnosticSeverity.Information,
+          code: 'console-log',
+          message: 'console.log left in code.',
+          suggestion: 'Remove the console.log or replace with a structured logger.',
+          range
+        });
+      }
+    }
+
+    if (ts.isBinaryExpression(node)) {
+      const op = node.operatorToken.kind;
+      if (op === ts.SyntaxKind.EqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsToken) {
+        const range = nodeRange(document, sourceFile, node);
+        smells.push({
+          type: 'correctness',
+          severity: vscode.DiagnosticSeverity.Warning,
+          code: 'eqeq',
+          message: 'Non-strict equality comparison used.',
+          suggestion: 'Prefer strict equality (=== / !==).',
+          range
+        });
+      }
     }
 
     ts.forEachChild(node, visit);

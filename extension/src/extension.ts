@@ -6,12 +6,14 @@ import { AiProvider, clearAiApiKey, getAiConfig, setAiApiKey } from './aiSetting
 import { aiExplain } from './aiClient';
 import { verifyAiResult } from './aiVerify';
 import { analyzeDocumentForSmells, CodeSmell } from './smells';
+import { SmellCodeActionProvider, SmellCodeLensProvider, toSmellDiagnostic } from './smellProviders';
 import { buildDeepDiveData, DeepDiveProvider } from './deepDive';
 
 let outputChannel: vscode.OutputChannel | undefined;
 let smellDiagnostics: vscode.DiagnosticCollection | undefined;
 let deepDiveProvider: DeepDiveProvider | undefined;
 let deepDiveView: vscode.TreeView<any> | undefined;
+let smellCodeLensProvider: SmellCodeLensProvider | undefined;
 const panels = new Map<string, vscode.WebviewPanel>();
 
 export function activate(context: vscode.ExtensionContext) {
@@ -22,6 +24,7 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel = vscode.window.createOutputChannel('Code Coach');
     smellDiagnostics = vscode.languages.createDiagnosticCollection('codeCoach.smells');
     deepDiveProvider = new DeepDiveProvider();
+    smellCodeLensProvider = new SmellCodeLensProvider();
 
     // Startup logging for debugging
     outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -172,7 +175,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }),
 
-    vscode.commands.registerCommand('codeCoach.showSmells', async () => {
+    vscode.commands.registerCommand('codeCoach.showSmells', async (scope?: vscode.Range) => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         vscode.window.showInformationMessage('Open a file to analyze for code smells.');
@@ -189,7 +192,14 @@ export function activate(context: vscode.ExtensionContext) {
       const diagnostics = smells.map(smell => toSmellDiagnostic(smell));
       smellDiagnostics?.set(editor.document.uri, diagnostics);
 
-      const report = formatSmellReport(editor.document, smells);
+      const reportSmells =
+        scope && scope instanceof vscode.Range ? smells.filter(smell => scope.intersection(smell.range)) : smells;
+      if (reportSmells.length === 0) {
+        vscode.window.showInformationMessage('No code smells detected in this scope.');
+        return;
+      }
+
+      const report = formatSmellReport(editor.document, reportSmells);
       presentResult('Code Coach: Code Smells', 'codeCoach.ui.codeSmells', report);
     }),
 
@@ -333,7 +343,33 @@ export function activate(context: vscode.ExtensionContext) {
         { language: 'typescriptreact' }
       ],
       hoverProvider
-    )
+    ),
+    vscode.languages.registerCodeLensProvider(
+      [
+        { language: 'javascript' },
+        { language: 'typescript' },
+        { language: 'javascriptreact' },
+        { language: 'typescriptreact' }
+      ],
+      smellCodeLensProvider ?? new SmellCodeLensProvider()
+    ),
+    vscode.languages.registerCodeActionsProvider(
+      [
+        { language: 'javascript' },
+        { language: 'typescript' },
+        { language: 'javascriptreact' },
+        { language: 'typescriptreact' }
+      ],
+      new SmellCodeActionProvider(),
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+    ),
+    vscode.workspace.onDidChangeTextDocument(event => {
+      if (!smellCodeLensProvider) return;
+      const lang = event.document.languageId;
+      if (lang.startsWith('javascript') || lang.startsWith('typescript')) {
+        smellCodeLensProvider.refresh();
+      }
+    })
   );
 
     console.log('[Code Coach] Activation complete - all commands registered');
@@ -444,17 +480,6 @@ function formatSmellReport(document: vscode.TextDocument, smells: CodeSmell[]): 
   return out.join('\n').trimEnd();
 }
 
-function toSmellDiagnostic(smell: CodeSmell): vscode.Diagnostic {
-  const diag = new vscode.Diagnostic(
-    smell.range,
-    `${smell.message} Suggestion: ${smell.suggestion}`,
-    smell.severity
-  );
-  diag.source = 'Code Coach';
-  diag.code = `smell:${smell.type}`;
-  return diag;
-}
-
 function formatRangeLocation(document: vscode.TextDocument, range: vscode.Range): string {
   return `${formatLocation(document.uri, range.start)}`;
 }
@@ -505,6 +530,7 @@ export function deactivate() {
   deepDiveProvider = undefined;
   deepDiveView?.dispose();
   deepDiveView = undefined;
+  smellCodeLensProvider = undefined;
   for (const panel of panels.values()) {
     panel.dispose();
   }

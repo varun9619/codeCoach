@@ -9,6 +9,7 @@ A minimal static-only MVP that helps you understand code and diagnostics.
 - **Trace Diagnostic Origin**: trace a diagnostic back to its enclosing symbol and likely callers.
 - **Show Code Smells**: run a static analysis pass for common performance/maintainability issues.
 - **Deep Dive**: open a sidebar panel with symbol overview, usages, blame, and coverage (if lcov exists).
+- **Smell CodeLens + Quick Fixes**: shows smell counts per function and offers safe quick fixes for certain smells.
 
 ## AI (optional)
 
