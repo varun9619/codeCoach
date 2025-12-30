@@ -3,6 +3,7 @@ import { AiConfig, AiProvider, getAiApiKey, getAiConfig } from './aiSettings';
 import { buildOptimizedPrompt, PromptOptimizerMode } from './promptOptimizer';
 import { AiExplainInput, AiExplainResult } from './aiTypes';
 import { enforcePrivacyPolicy, getPrivacyConfig, sanitizeAiInput } from './privacy';
+import { trackEvent } from './telemetry';
 
 export type { AiExplainInput, AiExplainResult } from './aiTypes';
 
@@ -21,6 +22,11 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
   const privacy = getPrivacyConfig();
   const decision = enforcePrivacyPolicy(privacy, cfg.provider, cfg.baseUrl);
   if (!decision.allowed) {
+    trackEvent('llm.blocked', {
+      provider: cfg.provider,
+      mode: privacy.mode,
+      reason: decision.reason ?? 'policy'
+    });
     throw new Error(decision.reason ?? 'AI request blocked by privacy settings.');
   }
 
@@ -41,6 +47,15 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
         mode: cfg.promptOptimizerMode as PromptOptimizerMode
       })
     : buildPlainPrompt(userPrompt);
+
+  const requestStart = Date.now();
+  trackEvent('llm.request', {
+    provider: cfg.provider,
+    kind: input.kind,
+    mode: privacy.mode,
+    promptChars: optimizedPrompt.length,
+    strictJson: cfg.strictJson
+  });
 
   if (cfg.promptDebug) {
     const channel = getPromptDebugChannel();
@@ -66,6 +81,12 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
 
   if (!res.ok) {
     const text = await safeReadText(res);
+    trackEvent('llm.error', {
+      provider: cfg.provider,
+      kind: input.kind,
+      latencyMs: Date.now() - requestStart,
+      status: res.status
+    });
     throw new Error(`AI request failed (${res.status}): ${text}`);
   }
 
@@ -78,11 +99,35 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
   // Many models ignore the "JSON only" instruction and wrap JSON in ```json fences.
   // Try hard to extract/parse JSON; if we can't, treat the content as plain markdown.
   const parsed = tryParseAiExplainResultFromText(content);
-  if (parsed) return parsed;
+  if (parsed) {
+    trackEvent('llm.response', {
+      provider: cfg.provider,
+      kind: input.kind,
+      latencyMs: Date.now() - requestStart,
+      responseChars: content.length,
+      parsed: true
+    });
+    return parsed;
+  }
 
   if (cfg.strictJson) {
+    trackEvent('llm.response', {
+      provider: cfg.provider,
+      kind: input.kind,
+      latencyMs: Date.now() - requestStart,
+      responseChars: content.length,
+      parsed: false
+    });
     throw new Error('AI response was not valid JSON, and strict JSON mode is enabled.');
   }
+
+  trackEvent('llm.response', {
+    provider: cfg.provider,
+    kind: input.kind,
+    latencyMs: Date.now() - requestStart,
+    responseChars: content.length,
+    parsed: false
+  });
 
   return {
     explanationMarkdown: content.trim(),

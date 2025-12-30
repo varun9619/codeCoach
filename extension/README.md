@@ -93,6 +93,7 @@ Prompt optimizer layer:
 - Command Palette → **Code Coach: Pin Deep Dive** / **Unpin Deep Dive**
 - Command Palette → **Code Coach: Deep Dive Sections**
 - Command Palette → **Code Coach: Export Deep Dive**
+- Command Palette → **Code Coach: Feedback (Helpful/Not Helpful)**
 - Toggle Coach Mode → Settings: `codeCoach.coachMode.enabled`
 
 ## Development
@@ -108,4 +109,4 @@ Run the extension:
 
 ## Notes
 
-This MVP is primarily static-only; optional runtime capture is available when debugging is enabled.
+This MVP is primarily static-only; optional runtime capture is available when debugging is enabled. AI requests respect `codeCoach.privacy.mode` (offline blocks AI).

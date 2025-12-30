@@ -91,19 +91,56 @@ function isFunctionSymbol(sym: vscode.DocumentSymbol): boolean {
 function buildFix(document: vscode.TextDocument, diag: vscode.Diagnostic, kind: string): vscode.CodeAction | undefined {
   const range = diag.range;
   const text = document.getText(range);
+  const commentPrefix = commentPrefixForLanguage(document.languageId);
 
   if (kind === 'debugger' || kind === 'console-log') {
-    return buildPreviewFix('Remove statement', document, range, '', diag);
+    return buildPreviewFix('Remove statement', document, range, '', diag, kind, 'replace');
   }
 
   if (kind === 'explicit-any') {
-    return buildPreviewFix('Replace any with unknown', document, range, 'unknown', diag);
+    return buildPreviewFix('Replace any with unknown', document, range, 'unknown', diag, kind, 'replace');
   }
 
   if (kind === 'eqeq') {
     const replacement = text.replace('==', '===').replace('!=', '!==');
     if (replacement === text) return undefined;
-    return buildPreviewFix('Use strict equality', document, range, replacement, diag);
+    return buildPreviewFix('Use strict equality', document, range, replacement, diag, kind, 'replace');
+  }
+
+  if (kind === 'sql-injection') {
+    return buildPreviewFix(
+      'Add TODO: parameterize query',
+      document,
+      range,
+      `${commentPrefix}TODO(Code Coach): parameterize query and validate inputs\n`,
+      diag,
+      kind,
+      'insert'
+    );
+  }
+
+  if (kind === 'command-injection') {
+    return buildPreviewFix(
+      'Add TODO: validate command inputs',
+      document,
+      range,
+      `${commentPrefix}TODO(Code Coach): validate/escape command inputs or use args array\n`,
+      diag,
+      kind,
+      'insert'
+    );
+  }
+
+  if (kind === 'unsafe-eval') {
+    return buildPreviewFix(
+      'Add TODO: remove eval',
+      document,
+      range,
+      `${commentPrefix}TODO(Code Coach): remove eval and replace with safe parser\n`,
+      diag,
+      kind,
+      'insert'
+    );
   }
 
   return undefined;
@@ -114,16 +151,23 @@ function buildPreviewFix(
   document: vscode.TextDocument,
   range: vscode.Range,
   replacement: string,
-  diag: vscode.Diagnostic
+  diag: vscode.Diagnostic,
+  smellKind: string,
+  editMode: 'replace' | 'insert'
 ): vscode.CodeAction {
   const action = new vscode.CodeAction(title, vscode.CodeActionKind.QuickFix);
   action.command = {
     command: 'codeCoach.previewSmellFix',
     title,
-    arguments: [document.uri, range, replacement, title]
+    arguments: [document.uri, range, replacement, title, editMode, smellKind]
   };
   action.diagnostics = [diag];
   return action;
+}
+
+function commentPrefixForLanguage(languageId: string): string {
+  if (languageId === 'python') return '# ';
+  return '// ';
 }
 
 export function toSmellDiagnostic(smell: CodeSmell): vscode.Diagnostic {

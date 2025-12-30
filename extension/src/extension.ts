@@ -640,25 +640,47 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand(
       'codeCoach.previewSmellFix',
-      async (uri: vscode.Uri, range: vscode.Range, replacement: string, title: string) => {
+      async (
+        uri: vscode.Uri,
+        range: vscode.Range,
+        replacement: string,
+        title: string,
+        editMode: 'replace' | 'insert' = 'replace',
+        smellKind?: string
+      ) => {
         const doc = await vscode.workspace.openTextDocument(uri);
         const original = doc.getText();
-        const startOffset = doc.offsetAt(range.start);
-        const endOffset = doc.offsetAt(range.end);
-        const updated = `${original.slice(0, startOffset)}${replacement}${original.slice(endOffset)}`;
+        let updated = original;
+
+        if (editMode === 'insert') {
+          const insertPos = new vscode.Position(range.start.line, 0);
+          const insertOffset = doc.offsetAt(insertPos);
+          updated = `${original.slice(0, insertOffset)}${replacement}${original.slice(insertOffset)}`;
+        } else {
+          const startOffset = doc.offsetAt(range.start);
+          const endOffset = doc.offsetAt(range.end);
+          updated = `${original.slice(0, startOffset)}${replacement}${original.slice(endOffset)}`;
+        }
 
         const previewDoc = await vscode.workspace.openTextDocument({
           content: updated,
           language: doc.languageId
         });
 
+        trackEvent('smell_fix_preview', { kind: smellKind ?? 'unknown', mode: editMode });
         await vscode.commands.executeCommand('vscode.diff', uri, previewDoc.uri, title);
         const choice = await vscode.window.showInformationMessage('Apply this fix?', 'Apply', 'Cancel');
         if (choice !== 'Apply') return;
 
         const edit = new vscode.WorkspaceEdit();
-        edit.replace(uri, range, replacement);
+        if (editMode === 'insert') {
+          const insertPos = new vscode.Position(range.start.line, 0);
+          edit.insert(uri, insertPos, replacement);
+        } else {
+          edit.replace(uri, range, replacement);
+        }
         await vscode.workspace.applyEdit(edit);
+        trackEvent('smell_fix_apply', { kind: smellKind ?? 'unknown', mode: editMode });
       }
     ),
 
@@ -1433,50 +1455,188 @@ async function maybeShowOnboarding(context: vscode.ExtensionContext): Promise<vo
 
 async function runOnboarding(context: vscode.ExtensionContext, force: boolean): Promise<void> {
   const config = vscode.workspace.getConfiguration('codeCoach');
-  const currentMode = config.get<string>('privacy.mode', 'offline');
-  const choice = await vscode.window.showQuickPick(
-    [
-      { label: 'Offline', description: 'No network calls (static only)', value: 'offline' },
-      { label: 'Local', description: 'Local LLM only (Ollama / LM Studio)', value: 'local' },
-      { label: 'Redacted', description: 'Sanitized context to cloud LLMs', value: 'redacted' },
-      { label: 'Full', description: 'Full context to cloud LLMs', value: 'full' }
-    ],
-    {
-      title: 'Code Coach — Choose Privacy Mode',
-      placeHolder: `Current: ${currentMode}`,
-      ignoreFocusOut: true
+  const currentMode = config.get<string>('privacy.mode', 'offline') ?? 'offline';
+
+  const panel = vscode.window.createWebviewPanel(
+    'codeCoachOnboarding',
+    'Code Coach — Getting Started',
+    vscode.ViewColumn.One,
+    { enableScripts: true, retainContextWhenHidden: true }
+  );
+
+  panel.webview.html = buildOnboardingHtml(currentMode);
+  trackEvent('onboarding_opened', { mode: currentMode });
+
+  panel.webview.onDidReceiveMessage(async message => {
+    if (!message || typeof message.type !== 'string') return;
+    switch (message.type) {
+      case 'save': {
+        const mode = typeof message.mode === 'string' ? message.mode : currentMode;
+        await config.update('privacy.mode', mode, vscode.ConfigurationTarget.Global);
+        trackEvent('onboarding_completed', { mode });
+        panel.dispose();
+        break;
+      }
+      case 'openCommands':
+        await vscode.commands.executeCommand('workbench.action.showCommands');
+        break;
+      case 'runExplain':
+        await vscode.commands.executeCommand('codeCoach.explainSelection');
+        break;
+      case 'runDeepDive':
+        await vscode.commands.executeCommand('codeCoach.deepDive');
+        break;
+      case 'openSettings':
+        await vscode.commands.executeCommand('workbench.action.openSettings', 'codeCoach');
+        break;
+      default:
+        break;
     }
-  );
+  });
 
-  if (choice) {
-    await config.update('privacy.mode', choice.value, vscode.ConfigurationTarget.Global);
-  } else if (!force) {
-    return;
+  if (!force) {
+    panel.onDidDispose(() => {
+      // No-op; onboarding shown flag is handled by caller.
+    });
   }
+}
 
-  const step1 = await vscode.window.showInformationMessage(
-    'Step 1: Select code and run "Code Coach: Explain Selection".',
-    'Open Command Palette',
-    'Next',
-    'Close'
-  );
-  if (step1 === 'Open Command Palette') {
-    await vscode.commands.executeCommand('workbench.action.showCommands');
-  }
-  if (step1 === 'Close') return;
+function buildOnboardingHtml(currentMode: string): string {
+  const modes = [
+    { id: 'offline', label: 'Offline', desc: 'No network calls (static only)' },
+    { id: 'local', label: 'Local', desc: 'Local LLM only (Ollama / LM Studio)' },
+    { id: 'redacted', label: 'Redacted', desc: 'Sanitized context to cloud LLMs' },
+    { id: 'full', label: 'Full', desc: 'Full context to cloud LLMs' }
+  ];
 
-  const step2 = await vscode.window.showInformationMessage(
-    'Step 2: Hover a diagnostic to see the enhanced explanation.',
-    'Next',
-    'Close'
-  );
-  if (step2 === 'Close') return;
+  const modeOptions = modes
+    .map(
+      mode => `
+      <label class="option">
+        <input type="radio" name="privacy" value="${mode.id}" ${mode.id === currentMode ? 'checked' : ''}/>
+        <span class="option-title">${mode.label}</span>
+        <span class="option-desc">${mode.desc}</span>
+      </label>
+    `
+    )
+    .join('\n');
 
-  await vscode.window.showInformationMessage(
-    'Step 3: Run "Code Coach: Deep Dive" on a symbol to see usages, history, and tests.'
-  );
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Code Coach — Getting Started</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        font-family: var(--vscode-font-family);
+        color: var(--vscode-foreground);
+        background: var(--vscode-editor-background);
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 8px 0;
+      }
+      p {
+        margin: 0 0 16px 0;
+        color: var(--vscode-descriptionForeground);
+      }
+      .card {
+        border: 1px solid var(--vscode-editorWidget-border);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+        background: var(--vscode-editorWidget-background);
+      }
+      .option {
+        display: grid;
+        grid-template-columns: 20px 1fr;
+        column-gap: 12px;
+        align-items: start;
+        padding: 8px 0;
+      }
+      .option-title {
+        font-weight: 600;
+      }
+      .option-desc {
+        display: block;
+        font-size: 12px;
+        color: var(--vscode-descriptionForeground);
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      button {
+        border: 1px solid var(--vscode-button-border, transparent);
+        background: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: var(--vscode-button-secondaryBackground);
+        color: var(--vscode-button-secondaryForeground);
+      }
+      ol {
+        margin: 0;
+        padding-left: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Welcome to Code Coach</h1>
+    <p>Your explainability layer for code you did not write.</p>
 
-  trackEvent('onboarding_completed', { mode: choice?.value ?? currentMode });
+    <div class="card">
+      <h2>Step 1 — Privacy Mode</h2>
+      <p>Choose how Code Coach can use AI. You can change this later.</p>
+      ${modeOptions}
+      <div class="actions">
+        <button id="save">Save & Close</button>
+        <button class="secondary" id="settings">Open Settings</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Step 2 — Try It</h2>
+      <ol>
+        <li>Select code and run Explain Selection.</li>
+        <li>Hover a diagnostic to see the enhanced tooltip.</li>
+        <li>Run Deep Dive on a symbol.</li>
+      </ol>
+      <div class="actions">
+        <button class="secondary" id="commands">Open Command Palette</button>
+        <button class="secondary" id="explain">Run Explain Selection</button>
+        <button class="secondary" id="deepDive">Run Deep Dive</button>
+      </div>
+    </div>
+
+    <script>
+      const vscode = acquireVsCodeApi();
+      document.getElementById('save').addEventListener('click', () => {
+        const selected = document.querySelector('input[name="privacy"]:checked');
+        vscode.postMessage({ type: 'save', mode: selected ? selected.value : '${currentMode}' });
+      });
+      document.getElementById('settings').addEventListener('click', () => {
+        vscode.postMessage({ type: 'openSettings' });
+      });
+      document.getElementById('commands').addEventListener('click', () => {
+        vscode.postMessage({ type: 'openCommands' });
+      });
+      document.getElementById('explain').addEventListener('click', () => {
+        vscode.postMessage({ type: 'runExplain' });
+      });
+      document.getElementById('deepDive').addEventListener('click', () => {
+        vscode.postMessage({ type: 'runDeepDive' });
+      });
+    </script>
+  </body>
+</html>`;
 }
 
 async function captureFeedback(helpful: boolean): Promise<void> {

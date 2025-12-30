@@ -20,7 +20,7 @@ This plan covers the remaining gaps vs PRODUCT_PROPOSAL.md. It is additive to th
 
 ---
 
-## Phase G1: Privacy + Prompt Safety Foundation
+## Phase G1: Privacy + Prompt Safety Foundation — done
 
 ### Deliverables
 - New settings:
@@ -53,7 +53,7 @@ This plan covers the remaining gaps vs PRODUCT_PROPOSAL.md. It is additive to th
 
 ---
 
-## Phase G2: Deep Dive Enhancements
+## Phase G2: Deep Dive Enhancements — done
 
 ### Deliverables
 - History section: recent commits from `git log` (author/date/summary).
@@ -72,7 +72,7 @@ This plan covers the remaining gaps vs PRODUCT_PROPOSAL.md. It is additive to th
 
 ---
 
-## Phase G3: "Why Does This Work" Mode
+## Phase G3: "Why Does This Work" Mode — done
 
 ### Deliverables
 - New command `codeCoach.explainWhyWorks`.
@@ -94,7 +94,7 @@ This plan covers the remaining gaps vs PRODUCT_PROPOSAL.md. It is additive to th
 
 ---
 
-## Phase G4: Security Smell Rules + Refactor Preview
+## Phase G4: Security Smell Rules + Refactor Preview — done
 
 ### Deliverables
 - Security smell rules (SQL injection, command injection, unsafe eval).
@@ -111,7 +111,7 @@ This plan covers the remaining gaps vs PRODUCT_PROPOSAL.md. It is additive to th
 
 ---
 
-## Phase G5: Onboarding + Guided Walkthrough
+## Phase G5: Onboarding + Guided Walkthrough — done
 
 ### Deliverables
 - First-run onboarding (privacy mode selection + shortcut hint).
@@ -128,7 +128,7 @@ This plan covers the remaining gaps vs PRODUCT_PROPOSAL.md. It is additive to th
 
 ---
 
-## Phase G6: Telemetry Events + Feedback
+## Phase G6: Telemetry Events + Feedback — done
 
 ### Deliverables
 - Feedback commands (thumbs up/down).
@@ -143,7 +143,7 @@ This plan covers the remaining gaps vs PRODUCT_PROPOSAL.md. It is additive to th
 
 ---
 
-## Phase G7: Future-facing (Plan Only)
+## Phase G7: Future-facing (Plan Only) — done
 
 ### Deliverables
 - VS Code Web feasibility notes.
