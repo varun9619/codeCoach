@@ -13,9 +13,16 @@ type FileCoverage = {
   branches: BranchData[];
 };
 
-type LcovCacheEntry = {
+type CoverageCacheEntry = {
   mtime: number;
   byFile: Map<string, FileCoverage>;
+};
+
+type CoverageFormat = 'lcov' | 'istanbul';
+
+type CoverageFile = {
+  uri: vscode.Uri;
+  format: CoverageFormat;
 };
 
 export type BranchSummary = {
@@ -34,26 +41,28 @@ export type TestGap = {
   suggestion?: string;
 };
 
-const lcovCache = new Map<string, LcovCacheEntry>();
-let lcovFilesCache: { updatedAt: number; files: vscode.Uri[] } | undefined;
+const lcovCache = new Map<string, CoverageCacheEntry>();
+const istanbulCache = new Map<string, CoverageCacheEntry>();
+let coverageFilesCache: { updatedAt: number; files: CoverageFile[] } | undefined;
 
 const gapStore = new Map<string, TestGap>();
 const gapKeysByDoc = new Map<string, string[]>();
 
-const LCOV_CACHE_TTL_MS = 5000;
+const COVERAGE_CACHE_TTL_MS = 5000;
 
 export async function getBranchCoverage(
   document: vscode.TextDocument
 ): Promise<{ data: FileCoverage; source: string } | undefined> {
-  const lcovFiles = await getLcovFiles();
-  if (lcovFiles.length === 0) return undefined;
+  const coverageFiles = await getCoverageFiles();
+  if (coverageFiles.length === 0) return undefined;
 
   const targetPath = normalizeFilePath(document.uri.fsPath);
-  for (const lcovFile of lcovFiles) {
-    const cache = await loadLcovCache(lcovFile);
-    const entry = cache.byFile.get(targetPath);
+  for (const file of coverageFiles) {
+    const cache =
+      file.format === 'lcov' ? await loadLcovCache(file.uri) : await loadIstanbulCache(file.uri);
+    const entry = findCoverageEntry(cache.byFile, targetPath);
     if (entry) {
-      return { data: entry, source: path.basename(lcovFile.fsPath) };
+      return { data: entry, source: path.basename(file.uri.fsPath) };
     }
   }
 
@@ -133,18 +142,31 @@ export function toTestGapDiagnostic(gap: TestGap): vscode.Diagnostic {
   return diag;
 }
 
-async function getLcovFiles(): Promise<vscode.Uri[]> {
+async function getCoverageFiles(): Promise<CoverageFile[]> {
   const now = Date.now();
-  if (lcovFilesCache && now - lcovFilesCache.updatedAt < LCOV_CACHE_TTL_MS) {
-    return lcovFilesCache.files;
+  if (coverageFilesCache && now - coverageFilesCache.updatedAt < COVERAGE_CACHE_TTL_MS) {
+    return coverageFilesCache.files;
   }
 
-  const files = await vscode.workspace.findFiles('**/lcov.info', '**/node_modules/**', 5);
-  lcovFilesCache = { updatedAt: now, files };
+  const patterns = getCoveragePatterns();
+  const exclude = '**/node_modules/**';
+  const filesMap = new Map<string, CoverageFile>();
+
+  for (const pattern of patterns) {
+    const uris = await vscode.workspace.findFiles(pattern, exclude, 10);
+    for (const uri of uris) {
+      const format = coverageFormatForUri(uri);
+      if (!format) continue;
+      filesMap.set(uri.toString(), { uri, format });
+    }
+  }
+
+  const files = Array.from(filesMap.values());
+  coverageFilesCache = { updatedAt: now, files };
   return files;
 }
 
-async function loadLcovCache(uri: vscode.Uri): Promise<LcovCacheEntry> {
+async function loadLcovCache(uri: vscode.Uri): Promise<CoverageCacheEntry> {
   const stat = await vscode.workspace.fs.stat(uri);
   const cached = lcovCache.get(uri.fsPath);
   if (cached && cached.mtime === stat.mtime) return cached;
@@ -154,6 +176,19 @@ async function loadLcovCache(uri: vscode.Uri): Promise<LcovCacheEntry> {
   const byFile = parseLcov(text);
   const next = { mtime: stat.mtime, byFile };
   lcovCache.set(uri.fsPath, next);
+  return next;
+}
+
+async function loadIstanbulCache(uri: vscode.Uri): Promise<CoverageCacheEntry> {
+  const stat = await vscode.workspace.fs.stat(uri);
+  const cached = istanbulCache.get(uri.fsPath);
+  if (cached && cached.mtime === stat.mtime) return cached;
+
+  const raw = await vscode.workspace.fs.readFile(uri);
+  const text = Buffer.from(raw).toString('utf8');
+  const byFile = parseIstanbulCoverage(text);
+  const next = { mtime: stat.mtime, byFile };
+  istanbulCache.set(uri.fsPath, next);
   return next;
 }
 
@@ -222,8 +257,75 @@ function parseLcov(text: string): Map<string, FileCoverage> {
   return byFile;
 }
 
+function parseIstanbulCoverage(text: string): Map<string, FileCoverage> {
+  const byFile = new Map<string, FileCoverage>();
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return byFile;
+  }
+  if (!json || typeof json !== 'object') return byFile;
+
+  for (const [filePath, entry] of Object.entries(json)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const branchMap = (entry as any).branchMap ?? {};
+    const branchHits = (entry as any).b ?? {};
+    const branches: BranchData[] = [];
+
+    for (const [id, map] of Object.entries(branchMap)) {
+      const loc = (map as any)?.loc?.start;
+      const line = typeof loc?.line === 'number' ? loc.line : undefined;
+      if (!line) continue;
+      const hits = (branchHits as any)[id] as number[] | undefined;
+      if (!Array.isArray(hits)) continue;
+      hits.forEach((hit, idx) => {
+        branches.push({
+          line,
+          block: Number(id),
+          branch: idx,
+          taken: typeof hit === 'number' ? hit : null
+        });
+      });
+    }
+
+    if (branches.length > 0) {
+      byFile.set(filePath, { lines: new Map<number, number>(), branches });
+    }
+  }
+
+  return byFile;
+}
+
 function normalizeFilePath(value: string): string {
   return path.resolve(path.normalize(value));
+}
+
+function findCoverageEntry(byFile: Map<string, FileCoverage>, targetPath: string): FileCoverage | undefined {
+  const normalizedTarget = normalizeFilePath(targetPath);
+  for (const [filePath, entry] of byFile) {
+    if (!filePath) continue;
+    const normalizedEntry = normalizeFilePath(filePath);
+    if (normalizedEntry === normalizedTarget) return entry;
+    if (!path.isAbsolute(filePath) && normalizedTarget.endsWith(path.normalize(filePath))) return entry;
+  }
+  return undefined;
+}
+
+function getCoveragePatterns(): string[] {
+  const config = vscode.workspace.getConfiguration('codeCoach');
+  const raw = config.get<string[]>('testGaps.coveragePaths');
+  if (raw && raw.length > 0) {
+    return raw.filter(Boolean);
+  }
+  return ['**/lcov.info', '**/coverage-final.json'];
+}
+
+function coverageFormatForUri(uri: vscode.Uri): CoverageFormat | undefined {
+  const basename = path.basename(uri.fsPath).toLowerCase();
+  if (basename === 'lcov.info' || basename.endsWith('.lcov')) return 'lcov';
+  if (basename.endsWith('.json')) return 'istanbul';
+  return undefined;
 }
 
 function readLineText(document: vscode.TextDocument, lineNumber: number): string {

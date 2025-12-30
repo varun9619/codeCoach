@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 const LEGACY_SECRET_KEY_NAME = 'codeCoach.ai.apiKey';
 const SECRET_KEY_PREFIX = 'codeCoach.ai.apiKey';
 
-export type AiProvider = 'openrouter' | 'openai' | 'anthropic' | 'gemini';
+export type AiProvider = 'openrouter' | 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'lmstudio';
 
 export type AiConfig = {
   enabled: boolean;
@@ -61,6 +61,20 @@ const PROVIDER_DEFAULTS: Record<AiProvider, ProviderDefaults> = {
     endpointPath: '/models/{model}:generateContent',
     model: 'gemini-1.5-pro',
     authHeader: 'x-goog-api-key',
+    authScheme: ''
+  },
+  ollama: {
+    baseUrl: 'http://localhost:11434',
+    endpointPath: '/v1/chat/completions',
+    model: 'llama3.1',
+    authHeader: '',
+    authScheme: ''
+  },
+  lmstudio: {
+    baseUrl: 'http://localhost:1234',
+    endpointPath: '/v1/chat/completions',
+    model: 'local-model',
+    authHeader: '',
     authScheme: ''
   }
 };
@@ -149,6 +163,10 @@ function normalizeProvider(raw: string): AiProvider {
       return 'anthropic';
     case 'gemini':
       return 'gemini';
+    case 'ollama':
+      return 'ollama';
+    case 'lmstudio':
+      return 'lmstudio';
     case 'openrouter':
     default:
       return 'openrouter';

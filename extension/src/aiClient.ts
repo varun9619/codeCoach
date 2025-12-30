@@ -33,12 +33,17 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
   if (!cfg.baseUrl) throw new Error('AI base URL is empty (codeCoach.ai.baseUrl).');
   if (!cfg.endpointPath) throw new Error('AI endpoint path is empty (codeCoach.ai.endpointPath).');
   if (!cfg.model) throw new Error('AI model/deployment is empty (codeCoach.ai.model).');
+  if (!isProviderAllowed(cfg.provider)) {
+    throw new Error(`AI provider ${cfg.provider} is disabled by policy.`);
+  }
 
   const apiKey = await getAiApiKey(context, cfg.provider);
-  if (!apiKey) throw new Error(`No API key stored for ${cfg.provider}. Run "Code Coach: Set AI API Key".`);
+  if (!apiKey && requiresApiKey(cfg.provider, cfg)) {
+    throw new Error(`No API key stored for ${cfg.provider}. Run "Code Coach: Set AI API Key".`);
+  }
 
   const url = joinUrl(cfg.baseUrl, resolveEndpointPath(cfg));
-  const headers = buildHeaders(cfg, apiKey);
+  const headers = buildHeaders(cfg, apiKey ?? '');
   const systemPrompt = buildSystemPrompt(cfg.responseStyle);
   const userPrompt = buildUserPrompt(input, cfg.responseStyle);
   const optimizedPrompt = cfg.promptOptimizer
@@ -125,6 +130,8 @@ function buildProviderBody(provider: AiProvider, input: ProviderBodyInput): Reco
       };
     case 'openai':
     case 'openrouter':
+    case 'ollama':
+    case 'lmstudio':
     default:
       return {
         model: input.model,
@@ -144,8 +151,10 @@ function buildHeaders(cfg: AiConfig, apiKey: string): Record<string, string> {
     ...cfg.extraHeaders
   };
 
-  const headerValue = cfg.authScheme ? `${cfg.authScheme} ${apiKey}` : apiKey;
-  headers[cfg.authHeader || 'Authorization'] = headerValue;
+  if (cfg.authHeader && apiKey) {
+    const headerValue = cfg.authScheme ? `${cfg.authScheme} ${apiKey}` : apiKey;
+    headers[cfg.authHeader || 'Authorization'] = headerValue;
+  }
   return headers;
 }
 
@@ -171,6 +180,8 @@ function extractProviderText(provider: AiProvider, raw: any): string | undefined
     }
     case 'openai':
     case 'openrouter':
+    case 'ollama':
+    case 'lmstudio':
     default:
       return raw?.choices?.[0]?.message?.content;
   }
@@ -188,6 +199,17 @@ function buildSystemPrompt(responseStyle: 'concise' | 'detailed'): string {
     `Style: ${styleInstruction} ` +
     'Use plain-English explanations.'
   );
+}
+
+function requiresApiKey(provider: AiProvider, cfg: AiConfig): boolean {
+  if (provider === 'ollama' || provider === 'lmstudio') return false;
+  return Boolean(cfg.authHeader);
+}
+
+function isProviderAllowed(provider: AiProvider): boolean {
+  const raw = vscode.workspace.getConfiguration('codeCoach').get<string[]>('enterprise.allowedAiProviders');
+  if (!raw || raw.length === 0) return true;
+  return raw.map(value => value.trim().toLowerCase()).includes(provider);
 }
 
 function getPromptDebugChannel(): vscode.OutputChannel {

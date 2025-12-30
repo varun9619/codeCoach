@@ -33,6 +33,10 @@
         "title": "Code Coach: Trace Diagnostic Origin"
       },
       {
+        "command": "codeCoach.traceStackTrace",
+        "title": "Code Coach: Trace Stack Trace"
+      },
+      {
         "command": "codeCoach.showSmells",
         "title": "Code Coach: Show Code Smells"
       },
@@ -61,12 +65,12 @@
       "editor/context": [
         {
           "command": "codeCoach.explainSelection",
-          "when": "editorHasSelection && (editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact)",
+          "when": "editorHasSelection && (editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust)",
           "group": "navigation@50"
         },
         {
           "command": "codeCoach.deepDive",
-          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact",
+          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
           "group": "navigation@51"
         }
       ]
@@ -93,7 +97,9 @@
             "openrouter",
             "openai",
             "anthropic",
-            "gemini"
+            "gemini",
+            "ollama",
+            "lmstudio"
           ],
           "default": "openrouter",
           "description": "AI provider used for Code Coach requests."
@@ -269,6 +275,24 @@
           "type": "boolean",
           "default": false,
           "description": "Enable local telemetry logging to the Code Coach Telemetry output channel."
+        },
+        "codeCoach.testGaps.coveragePaths": {
+          "type": "array",
+          "default": [
+            "**/lcov.info",
+            "**/coverage-final.json"
+          ],
+          "description": "Glob patterns for coverage files used by Test Gap Finder."
+        },
+        "codeCoach.enterprise.allowedAiProviders": {
+          "type": "array",
+          "default": [],
+          "description": "Restrict AI providers to this allowlist (empty = allow all)."
+        },
+        "codeCoach.enterprise.auditLogPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional file path for audit log events (local-only)."
         }
       }
     },

@@ -12,11 +12,9 @@ export function explainSelection(input: ExplainSelectionInput): string {
     .map((line, index) => ({ line, lineNumber: input.startLineNumber + index }))
     .filter(({ line }) => line.trim().length > 0);
 
-  // Try a light TypeScript parse to detect high-level constructs.
-  const wrapped = `function __codeCoachWrap__() {\n${input.text}\n}`;
-  const sf = ts.createSourceFile('selection.ts', wrapped, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-
-  const constructs = summarizeTopLevelConstructs(sf);
+  const constructs = isTsLanguage(input.languageId)
+    ? summarizeTopLevelConstructs(input.text)
+    : summarizeTextConstructs(lines, input.languageId);
 
   const out: string[] = [];
   out.push('Code Coach — Explain Selection');
@@ -30,7 +28,7 @@ export function explainSelection(input: ExplainSelectionInput): string {
 
   out.push('Line-by-line walkthrough:');
   for (const { line, lineNumber } of numbered) {
-    out.push(`- Line ${lineNumber}: ${explainLine(line)}`);
+    out.push(`- Line ${lineNumber}: ${explainLine(line, input.languageId)}`);
   }
 
   out.push('');
@@ -41,8 +39,10 @@ export function explainSelection(input: ExplainSelectionInput): string {
   return out.join('\n');
 }
 
-function summarizeTopLevelConstructs(sf: ts.SourceFile): string[] {
+function summarizeTopLevelConstructs(text: string): string[] {
   const result: string[] = [];
+  const wrapped = `function __codeCoachWrap__() {\n${text}\n}`;
+  const sf = ts.createSourceFile('selection.ts', wrapped, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const body = findWrappedFunctionBody(sf);
   if (!body) return result;
 
@@ -67,6 +67,47 @@ function summarizeTopLevelConstructs(sf: ts.SourceFile): string[] {
   return dedupe(result);
 }
 
+function summarizeTextConstructs(lines: string[], languageId: string): string[] {
+  const result: string[] = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    if (languageId === 'python') {
+      if (/^def\s+/.test(line)) result.push('Function definition');
+      if (/^class\s+/.test(line)) result.push('Class definition');
+      if (/^if\s+/.test(line)) result.push('Conditional (if/elif/else)');
+      if (/^for\s+/.test(line)) result.push('Loop (for)');
+      if (/^while\s+/.test(line)) result.push('Loop (while)');
+      if (/^try\s*:/.test(line)) result.push('Error handling (try/except)');
+      if (/^with\s+/.test(line)) result.push('Context manager (with)');
+    } else if (languageId === 'java') {
+      if (/\bclass\b/.test(line) || /\binterface\b/.test(line)) result.push('Class or interface');
+      if (/\bif\s*\(/.test(line)) result.push('Conditional (if/else)');
+      if (/\bfor\s*\(/.test(line) || /\bwhile\s*\(/.test(line)) result.push('Loop');
+      if (/\bswitch\s*\(/.test(line)) result.push('Switch statement');
+      if (/\btry\b/.test(line)) result.push('Error handling (try/catch)');
+    } else if (languageId === 'go') {
+      if (/^func\s+/.test(line)) result.push('Function declaration');
+      if (/\bif\s+/.test(line)) result.push('Conditional (if)');
+      if (/\bfor\b/.test(line)) result.push('Loop (for)');
+      if (/\bswitch\b/.test(line)) result.push('Switch statement');
+      if (/\bselect\b/.test(line)) result.push('Select statement');
+      if (/\bdefer\b/.test(line)) result.push('Deferred call');
+    } else if (languageId === 'rust') {
+      if (/^fn\s+/.test(line)) result.push('Function definition');
+      if (/\bif\s+/.test(line)) result.push('Conditional (if/else)');
+      if (/\bfor\b/.test(line) || /\bwhile\b/.test(line)) result.push('Loop');
+      if (/\bmatch\b/.test(line)) result.push('Match statement');
+      if (/\bimpl\b/.test(line)) result.push('Impl block');
+    } else {
+      if (/^if\s*\(/.test(line)) result.push('Conditional (if/else)');
+      if (/^for\s*\(/.test(line) || /^while\s*\(/.test(line)) result.push('Loop');
+    }
+  }
+  return dedupe(result);
+}
+
 function findWrappedFunctionBody(sf: ts.SourceFile): ts.Block | undefined {
   for (const stmt of sf.statements) {
     if (ts.isFunctionDeclaration(stmt) && stmt.name?.text === '__codeCoachWrap__') {
@@ -76,7 +117,7 @@ function findWrappedFunctionBody(sf: ts.SourceFile): ts.Block | undefined {
   return undefined;
 }
 
-function explainLine(rawLine: string): string {
+function explainLine(rawLine: string, languageId: string): string {
   const line = rawLine.trim();
 
   if (/^\/\//.test(line)) return 'Comment.';
@@ -101,11 +142,36 @@ function explainLine(rawLine: string): string {
   if (/^do\b/.test(line)) return 'Starts a do..while loop body.';
 
   if (/^return\b/.test(line)) return 'Returns a value from the current function.';
-  if (/^throw\b/.test(line)) return 'Throws an error (exits the current flow).';
+  if (/^throw\b/.test(line) || /^raise\b/.test(line)) return 'Throws an error (exits the current flow).';
 
   if (/^try\b/.test(line)) return 'Starts a try block (error handling).';
-  if (/^catch\b/.test(line)) return 'Handles an error from a try block (catch).';
+  if (/^catch\b/.test(line) || /^except\b/.test(line)) return 'Handles an error from a try block (catch/except).';
   if (/^finally\b/.test(line)) return 'Runs cleanup code whether an error happened or not (finally).';
+
+  if (languageId === 'python') {
+    if (/^def\s+/.test(line)) return 'Defines a function.';
+    if (/^class\s+/.test(line)) return 'Defines a class.';
+    if (/^import\b/.test(line) || /^from\b/.test(line)) return 'Imports a module or symbol.';
+    if (/^with\s+/.test(line)) return 'Enters a context manager (with).';
+  }
+
+  if (languageId === 'java') {
+    if (/\bclass\b/.test(line)) return 'Defines a class.';
+    if (/\binterface\b/.test(line)) return 'Defines an interface.';
+    if (/\bnew\b/.test(line)) return 'Instantiates an object.';
+  }
+
+  if (languageId === 'go') {
+    if (/^func\s+/.test(line)) return 'Defines a function.';
+    if (/\bdefer\b/.test(line)) return 'Defers a call until the surrounding function returns.';
+    if (/\bgo\b\s+/.test(line)) return 'Launches a goroutine.';
+  }
+
+  if (languageId === 'rust') {
+    if (/^fn\s+/.test(line)) return 'Defines a function.';
+    if (/\bmatch\b/.test(line)) return 'Pattern matching over possible cases.';
+    if (/\bimpl\b/.test(line)) return 'Implements methods for a type.';
+  }
 
   if (/^[}\]]/.test(line)) return 'Closes a block or structure.';
 
@@ -117,4 +183,13 @@ function explainLine(rawLine: string): string {
 
 function dedupe(items: string[]): string[] {
   return [...new Set(items)];
+}
+
+function isTsLanguage(languageId: string): boolean {
+  return (
+    languageId === 'typescript' ||
+    languageId === 'typescriptreact' ||
+    languageId === 'javascript' ||
+    languageId === 'javascriptreact'
+  );
 }

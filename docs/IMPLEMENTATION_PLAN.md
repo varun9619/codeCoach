@@ -66,7 +66,7 @@ Verification:
 - Validate usages list and blame output.
 - If coverage file exists, validate Tests section.
 
-## Phase 3: Trace UX Upgrade (call graph panel)
+## Phase 3: Trace UX Upgrade (call graph panel) — done
 Scope:
 - Webview call graph visualization + clickable nodes.
 Deliverables:
@@ -130,7 +130,7 @@ Verification:
 - Hints appear/disappear with setting toggle.
 - Performance remains acceptable on large files.
 
-## Phase 8: Performance + Reliability
+## Phase 8: Performance + Reliability — done
 Scope:
 - Incremental indexing + caching + telemetry.
 Deliverables:
@@ -141,14 +141,14 @@ Verification:
 - Large repo test: hover response < 150ms after warm cache.
 - No UI freezes during indexing.
 
-## V1 (3 months) Deliverables
+## V1 (3 months) Deliverables — done
 - Stack trace correlation for tracing.
 - Expanded smell rules + false-positive tuning.
 - Test gap support for more runners/coverage formats.
 - Python support (basic).
 - Team tier admin controls.
 
-## V2 (6 months) Deliverables
+## V2 (6 months) Deliverables — done
 - Local LLM support (Ollama/LM Studio).
 - Inline annotations (Coach Mode) at scale.
 - Webview call graph improvements.

@@ -146,7 +146,7 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
     if (element.section === 'coverage') {
       const coverage = this.data.coverage;
       if (!coverage) {
-        return [new DeepDiveItem('Coverage not found (lcov.info missing)', 'item')];
+        return [new DeepDiveItem('Coverage not found (no coverage files detected)', 'item')];
       }
       const percent = coverage.totalLines === 0 ? 0 : Math.round((coverage.hitLines / coverage.totalLines) * 100);
       const summary = `Coverage: ${coverage.hitLines}/${coverage.totalLines} (${percent}%)`;
@@ -316,14 +316,17 @@ function parseBlamePorcelain(text: string): BlameEntry[] {
 }
 
 async function loadCoverage(document: vscode.TextDocument, range: vscode.Range): Promise<CoverageSummary | undefined> {
-  const files = await vscode.workspace.findFiles('**/lcov.info', '**/node_modules/**', 5);
+  const files = await findCoverageFiles();
   if (files.length === 0) return undefined;
 
   for (const file of files) {
     try {
       const data = await vscode.workspace.fs.readFile(file);
       const text = Buffer.from(data).toString('utf8');
-      const summary = parseLcovForFile(text, document.uri.fsPath, range);
+      const summary =
+        coverageFormatForPath(file.fsPath) === 'istanbul'
+          ? parseIstanbulForFile(text, document.uri.fsPath, range)
+          : parseLcovForFile(text, document.uri.fsPath, range);
       if (summary) return summary;
     } catch {
       continue;
@@ -383,6 +386,87 @@ function parseLcovForFile(text: string, targetPath: string, range: vscode.Range)
     uncoveredLines: uncovered.slice(0, 100),
     source: 'lcov.info'
   };
+}
+
+function parseIstanbulForFile(text: string, targetPath: string, range: vscode.Range): CoverageSummary | undefined {
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!json || typeof json !== 'object') return undefined;
+
+  const normalizedTarget = path.normalize(targetPath);
+  let entry: any;
+  for (const [filePath, value] of Object.entries(json)) {
+    if (!filePath) continue;
+    const normalizedEntry = path.normalize(filePath);
+    if (normalizedEntry === normalizedTarget || normalizedTarget.endsWith(normalizedEntry)) {
+      entry = value;
+      break;
+    }
+  }
+  if (!entry) return undefined;
+
+  const lineMap = entry.l || entry.lines || {};
+  const hitsByLine = new Map<number, number>();
+  for (const [lineKey, hit] of Object.entries(lineMap)) {
+    const lineNo = Number(lineKey);
+    const count = Number(hit);
+    if (!Number.isNaN(lineNo) && !Number.isNaN(count)) {
+      hitsByLine.set(lineNo, count);
+    }
+  }
+  if (hitsByLine.size === 0) return undefined;
+
+  const start = range.start.line + 1;
+  const end = range.end.line + 1;
+  const lineNumbers = Array.from(hitsByLine.keys()).filter(l => l >= start && l <= end);
+  if (lineNumbers.length === 0) return undefined;
+
+  let hitLines = 0;
+  const uncovered: number[] = [];
+  for (const lineNo of lineNumbers) {
+    const hits = hitsByLine.get(lineNo) ?? 0;
+    if (hits > 0) hitLines += 1;
+    else uncovered.push(lineNo);
+  }
+
+  return {
+    totalLines: lineNumbers.length,
+    hitLines,
+    uncoveredLines: uncovered.slice(0, 100),
+    source: 'coverage-final.json'
+  };
+}
+
+async function findCoverageFiles(): Promise<vscode.Uri[]> {
+  const patterns = getCoveragePatterns();
+  const exclude = '**/node_modules/**';
+  const filesMap = new Map<string, vscode.Uri>();
+  for (const pattern of patterns) {
+    const files = await vscode.workspace.findFiles(pattern, exclude, 5);
+    for (const file of files) {
+      filesMap.set(file.toString(), file);
+    }
+  }
+  return Array.from(filesMap.values());
+}
+
+function getCoveragePatterns(): string[] {
+  const config = vscode.workspace.getConfiguration('codeCoach');
+  const raw = config.get<string[]>('testGaps.coveragePaths');
+  if (raw && raw.length > 0) {
+    return raw.filter(Boolean);
+  }
+  return ['**/lcov.info', '**/coverage-final.json'];
+}
+
+function coverageFormatForPath(filePath: string): 'lcov' | 'istanbul' {
+  const base = path.basename(filePath).toLowerCase();
+  if (base.endsWith('.json')) return 'istanbul';
+  return 'lcov';
 }
 
 const testFileCache = new Map<string, { updatedAt: number; files: vscode.Uri[] }>();

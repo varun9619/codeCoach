@@ -67,6 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('  • Code Coach: Explain Diagnostic');
     outputChannel.appendLine('  • Code Coach: Explain Last Exception');
     outputChannel.appendLine('  • Code Coach: Trace Diagnostic Origin');
+    outputChannel.appendLine('  • Code Coach: Trace Stack Trace');
     outputChannel.appendLine('  • Code Coach: Show Code Smells');
     outputChannel.appendLine('  • Code Coach: Show Test Gaps');
     outputChannel.appendLine('  • Code Coach: Deep Dive');
@@ -238,6 +239,53 @@ export function activate(context: vscode.ExtensionContext) {
       });
     }),
 
+    vscode.commands.registerCommand('codeCoach.traceStackTrace', async () => {
+      const input = await vscode.window.showInputBox({
+        title: 'Code Coach: Trace Stack Trace',
+        prompt: 'Paste a stack trace. Leave empty to use clipboard contents.',
+        ignoreFocusOut: true
+      });
+
+      let stack = input ?? '';
+      if (!stack.trim()) {
+        stack = await vscode.env.clipboard.readText();
+      }
+      if (!stack.trim()) {
+        vscode.window.showInformationMessage('No stack trace provided or found in clipboard.');
+        return;
+      }
+
+      const frames = parseStackTrace(stack);
+      if (frames.length === 0) {
+        vscode.window.showInformationMessage('No stack frames recognized in the provided stack trace.');
+        return;
+      }
+
+      const data: TraceOriginData = {
+        diagnostic: {
+          message: 'Stack trace (parsed)',
+          location: `Frames: ${frames.length}`
+        },
+        references: [],
+        notes: [`Parsed ${frames.length} stack frames.`],
+        callGraph: buildCallGraphFromFrames(frames)
+      };
+
+      const surface = getUiSurface('codeCoach.ui.traceDiagnosticOrigin');
+      if (surface === 'panel') {
+        showTraceOriginPanel(data);
+      } else {
+        const report = renderDiagnosticOriginReport(data);
+        presentResult('Code Coach: Trace Stack Trace', 'codeCoach.ui.traceDiagnosticOrigin', report);
+      }
+
+      trackEvent('feature_used', {
+        feature: 'trace_stack',
+        surface,
+        frames: frames.length
+      });
+    }),
+
     vscode.commands.registerCommand('codeCoach.showSmells', async (scope?: vscode.Range) => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
@@ -306,10 +354,7 @@ export function activate(context: vscode.ExtensionContext) {
         scope && scope instanceof vscode.Range ? allGaps.filter(gap => scope.intersection(gap.range)) : allGaps;
       let symbolLabel: string | undefined;
       if (scope) {
-        const symbols = (await vscode.commands.executeCommand(
-          'vscode.executeDocumentSymbolProvider',
-          editor.document.uri
-        )) as vscode.DocumentSymbol[] | undefined;
+        const symbols = await getDocumentSymbols(editor.document);
         const enclosing = symbols ? findEnclosingSymbol(symbols, scope.start) : undefined;
         if (enclosing) {
           symbolLabel = `${symbolKindLabel(enclosing.kind)} ${enclosing.name} (${formatRangeLabel(
@@ -472,10 +517,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const document = await vscode.workspace.openTextDocument(targetUri);
-      const symbols = (await vscode.commands.executeCommand(
-        'vscode.executeDocumentSymbolProvider',
-        targetUri
-      )) as vscode.DocumentSymbol[] | undefined;
+      const symbols = await getDocumentSymbols(document);
       const enclosing = symbols ? findEnclosingSymbol(symbols, new vscode.Position(Math.max(0, line - 1), 0)) : undefined;
       const scopeLabel = enclosing ? `${symbolKindLabel(enclosing.kind)} ${enclosing.name}` : 'Branch coverage';
 
@@ -512,7 +554,11 @@ export function activate(context: vscode.ExtensionContext) {
         { language: 'javascript' },
         { language: 'typescript' },
         { language: 'javascriptreact' },
-        { language: 'typescriptreact' }
+        { language: 'typescriptreact' },
+        { language: 'python' },
+        { language: 'java' },
+        { language: 'go' },
+        { language: 'rust' }
       ],
       hoverProvider
     ),
@@ -814,10 +860,19 @@ async function pickAiProvider(): Promise<AiProvider | undefined> {
     { label: 'OpenRouter', description: current === 'openrouter' ? 'current' : '', provider: 'openrouter' },
     { label: 'OpenAI', description: current === 'openai' ? 'current' : '', provider: 'openai' },
     { label: 'Anthropic', description: current === 'anthropic' ? 'current' : '', provider: 'anthropic' },
-    { label: 'Gemini', description: current === 'gemini' ? 'current' : '', provider: 'gemini' }
+    { label: 'Gemini', description: current === 'gemini' ? 'current' : '', provider: 'gemini' },
+    { label: 'Ollama (local)', description: current === 'ollama' ? 'current' : '', provider: 'ollama' },
+    { label: 'LM Studio (local)', description: current === 'lmstudio' ? 'current' : '', provider: 'lmstudio' }
   ];
 
-  const picked = await vscode.window.showQuickPick(options, {
+  const allowed = getAllowedProviders();
+  const filtered = allowed ? options.filter(option => allowed.has(option.provider)) : options;
+  if (filtered.length === 0) {
+    vscode.window.showWarningMessage('All AI providers are disabled by policy.');
+    return undefined;
+  }
+
+  const picked = await vscode.window.showQuickPick(filtered, {
     title: 'Code Coach: Select AI Provider',
     placeHolder: 'Choose where to store/use an API key'
   });
@@ -887,6 +942,27 @@ function getUiSurface(settingKey: string): UiSurface {
   const raw = vscode.workspace.getConfiguration().get<string>(settingKey, 'output');
   if (raw === 'panel' || raw === 'peek') return raw;
   return 'output';
+}
+
+function getAllowedProviders(): Set<AiProvider> | undefined {
+  const config = vscode.workspace.getConfiguration('codeCoach');
+  const raw = config.get<string[]>('enterprise.allowedAiProviders');
+  if (!raw || raw.length === 0) return undefined;
+  const allowed = new Set<AiProvider>();
+  for (const entry of raw) {
+    const normalized = entry.trim().toLowerCase();
+    if (
+      normalized === 'openrouter' ||
+      normalized === 'openai' ||
+      normalized === 'anthropic' ||
+      normalized === 'gemini' ||
+      normalized === 'ollama' ||
+      normalized === 'lmstudio'
+    ) {
+      allowed.add(normalized as AiProvider);
+    }
+  }
+  return allowed.size > 0 ? allowed : undefined;
 }
 
 function showInPanel(viewType: string, title: string, content: string): void {
@@ -1558,4 +1634,118 @@ function confidenceForCallGraph(callers: number): 'low' | 'medium' | 'high' {
   if (callers === 0) return 'low';
   if (callers < 3) return 'medium';
   return 'high';
+}
+
+type StackFrameRef = {
+  label: string;
+  filePath: string;
+  line: number;
+  column?: number;
+};
+
+function parseStackTrace(stack: string): StackFrameRef[] {
+  const frames: StackFrameRef[] = [];
+  const lines = stack.replace(/\r\n/g, '\n').split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Node / V8 style: at func (path:line:col)
+    let match = /at\s+(.+?)\s+\((.+):(\d+):(\d+)\)/.exec(trimmed);
+    if (match) {
+      const [, fn, filePath, lineNo, colNo] = match;
+      const resolved = resolveCitationPath(filePath) ?? filePath;
+      frames.push({
+        label: `${fn} (${path.basename(filePath)}:${lineNo})`,
+        filePath: resolved,
+        line: Number(lineNo),
+        column: Number(colNo)
+      });
+      continue;
+    }
+
+    // Node / V8 style without function: at path:line:col
+    match = /at\s+(.+):(\d+):(\d+)/.exec(trimmed);
+    if (match) {
+      const [, filePath, lineNo, colNo] = match;
+      const resolved = resolveCitationPath(filePath) ?? filePath;
+      frames.push({
+        label: `${path.basename(filePath)}:${lineNo}`,
+        filePath: resolved,
+        line: Number(lineNo),
+        column: Number(colNo)
+      });
+      continue;
+    }
+
+    // Python style: File "path", line N, in func
+    match = /File\s+"(.+)",\s+line\s+(\d+),\s+in\s+(.+)/.exec(trimmed);
+    if (match) {
+      const [, filePath, lineNo, fn] = match;
+      const resolved = resolveCitationPath(filePath) ?? filePath;
+      frames.push({
+        label: `${fn.trim()} (${path.basename(filePath)}:${lineNo})`,
+        filePath: resolved,
+        line: Number(lineNo)
+      });
+      continue;
+    }
+
+    // Java style: at pkg.Class.method(File.java:123)
+    match = /at\s+(.+)\((.+):(\d+)\)/.exec(trimmed);
+    if (match) {
+      const [, fn, filePath, lineNo] = match;
+      const resolved = resolveCitationPath(filePath) ?? filePath;
+      frames.push({
+        label: `${fn} (${path.basename(filePath)}:${lineNo})`,
+        filePath: resolved,
+        line: Number(lineNo)
+      });
+      continue;
+    }
+
+    // Go/Rust: path/to/file.go:123 or path/to/file.rs:123:45
+    match = /(.+\\.(?:go|rs|py|js|ts|tsx|jsx)):([0-9]+)(?::([0-9]+))?/.exec(trimmed);
+    if (match) {
+      const [, filePath, lineNo, colNo] = match;
+      const resolved = resolveCitationPath(filePath) ?? filePath;
+      frames.push({
+        label: `${path.basename(filePath)}:${lineNo}`,
+        filePath: resolved,
+        line: Number(lineNo),
+        column: colNo ? Number(colNo) : undefined
+      });
+    }
+  }
+
+  return frames.filter(frame => !Number.isNaN(frame.line) && frame.filePath);
+}
+
+function buildCallGraphFromFrames(frames: StackFrameRef[]): TraceCallGraph {
+  const nodes: CallGraphNode[] = [];
+  const edges: CallGraphEdge[] = [];
+
+  const nodeIds: string[] = [];
+  for (const frame of frames) {
+    const id = makeCallGraphNodeId(frame.filePath, frame.line, frame.label);
+    nodes.push({
+      id,
+      label: frame.label,
+      uri: frame.filePath,
+      line: frame.line
+    });
+    nodeIds.push(id);
+  }
+
+  for (let i = 0; i < nodeIds.length - 1; i += 1) {
+    edges.push({ from: nodeIds[i + 1], to: nodeIds[i] });
+  }
+
+  return {
+    nodes,
+    edges,
+    rootId: nodeIds[0] ?? 'stack',
+    confidence: 'high'
+  };
 }

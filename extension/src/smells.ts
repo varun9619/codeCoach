@@ -20,8 +20,24 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
   const sourceFile = ts.createSourceFile(document.fileName, text, ts.ScriptTarget.Latest, true, scriptKind);
   const smells: CodeSmell[] = [];
   const loopStack: ts.Node[] = [];
+  const isTest = isTestFile(document.uri.fsPath);
 
-  const visit = (node: ts.Node) => {
+  const visit = (node: ts.Node, depth = 0) => {
+    const nestingNode = isNestingNode(node);
+    const nextDepth = nestingNode ? depth + 1 : depth;
+
+    if (nestingNode && depth >= 3) {
+      const range = nodeRange(document, sourceFile, node);
+      smells.push({
+        type: 'maintainability',
+        severity: vscode.DiagnosticSeverity.Information,
+        code: 'deep-nesting',
+        message: 'Deeply nested control flow (depth 4+).',
+        suggestion: 'Consider extracting helper functions or early returns to reduce nesting.',
+        range
+      });
+    }
+
     if (isLoop(node)) {
       if (loopStack.length >= 1) {
         const range = nodeRange(document, sourceFile, node);
@@ -35,7 +51,7 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
         });
       }
       loopStack.push(node);
-      ts.forEachChild(node, visit);
+      ts.forEachChild(node, child => visit(child, nextDepth));
       loopStack.pop();
       return;
     }
@@ -53,9 +69,22 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
           range
         });
       }
+
+      const range = nodeRange(document, sourceFile, node);
+      const lineCount = Math.max(1, range.end.line - range.start.line + 1);
+      if (lineCount > 80) {
+        smells.push({
+          type: 'maintainability',
+          severity: vscode.DiagnosticSeverity.Information,
+          code: 'long-function',
+          message: `Function is ${lineCount} lines long.`,
+          suggestion: 'Split the function into smaller helpers to improve readability.',
+          range: nodeNameRange(document, sourceFile, node) ?? range
+        });
+      }
     }
 
-    if (node.kind === ts.SyntaxKind.AnyKeyword) {
+    if (!isTest && node.kind === ts.SyntaxKind.AnyKeyword) {
       const range = nodeRange(document, sourceFile, node);
       smells.push({
         type: 'maintainability',
@@ -79,7 +108,7 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
       });
     }
 
-    if (ts.isDebuggerStatement(node)) {
+    if (!isTest && ts.isDebuggerStatement(node)) {
       const range = nodeRange(document, sourceFile, node);
       smells.push({
         type: 'maintainability',
@@ -99,15 +128,17 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
         expr.expression.text === 'console' &&
         expr.name.text === 'log'
       ) {
-        const range = nodeRange(document, sourceFile, node);
-        smells.push({
-          type: 'maintainability',
-          severity: vscode.DiagnosticSeverity.Information,
-          code: 'console-log',
-          message: 'console.log left in code.',
-          suggestion: 'Remove the console.log or replace with a structured logger.',
-          range
-        });
+        if (!isTest) {
+          const range = nodeRange(document, sourceFile, node);
+          smells.push({
+            type: 'maintainability',
+            severity: vscode.DiagnosticSeverity.Information,
+            code: 'console-log',
+            message: 'console.log left in code.',
+            suggestion: 'Remove the console.log or replace with a structured logger.',
+            range
+          });
+        }
       }
     }
 
@@ -126,10 +157,22 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
       }
     }
 
-    ts.forEachChild(node, visit);
+    if (ts.isAwaitExpression(node) && loopStack.length > 0) {
+      const range = nodeRange(document, sourceFile, node);
+      smells.push({
+        type: 'performance',
+        severity: vscode.DiagnosticSeverity.Warning,
+        code: 'await-in-loop',
+        message: 'Await used inside a loop can serialize async work.',
+        suggestion: 'Consider Promise.all or batching to run async work in parallel.',
+        range
+      });
+    }
+
+    ts.forEachChild(node, child => visit(child, nextDepth));
   };
 
-  visit(sourceFile);
+  visit(sourceFile, 0);
   return smells;
 }
 
@@ -140,6 +183,15 @@ function isLoop(node: ts.Node): boolean {
     ts.isForInStatement(node) ||
     ts.isWhileStatement(node) ||
     ts.isDoStatement(node)
+  );
+}
+
+function isNestingNode(node: ts.Node): boolean {
+  return (
+    ts.isIfStatement(node) ||
+    isLoop(node) ||
+    ts.isSwitchStatement(node) ||
+    ts.isTryStatement(node)
   );
 }
 
@@ -176,4 +228,17 @@ function nodeNameRange(
     return nodeRange(document, sourceFile, node.name);
   }
   return undefined;
+}
+
+function isTestFile(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+  return (
+    normalized.includes('/__tests__/') ||
+    normalized.includes('.test.') ||
+    normalized.includes('.spec.') ||
+    normalized.endsWith('.test.js') ||
+    normalized.endsWith('.test.ts') ||
+    normalized.endsWith('.spec.js') ||
+    normalized.endsWith('.spec.ts')
+  );
 }

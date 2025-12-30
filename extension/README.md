@@ -8,16 +8,17 @@ A minimal static-only MVP that helps you understand code and diagnostics.
 - **Explain Diagnostic**: hover on a VS Code diagnostic to see a plain-English explanation + likely causes + fixes.
 - **Diagnostic Quick Fixes**: lightbulb offers optional chaining / non-null assertion / implicit-any fixes where safe.
 - **Trace Diagnostic Origin**: trace a diagnostic back to its enclosing symbol and likely callers.
+- **Trace Stack Trace**: paste a stack trace and see a linked call chain.
 - **Show Code Smells**: run a static analysis pass for common performance/maintainability issues.
-- **Test Gap Finder**: uses `lcov.info` to highlight uncovered branches and suggest test inputs.
-- **Deep Dive**: open a sidebar panel with symbol overview, usages, blame, tests (heuristic), and coverage (if lcov exists).
+- **Test Gap Finder**: uses coverage files (`lcov.info` or `coverage-final.json`) to highlight uncovered branches and suggest test inputs.
+- **Deep Dive**: open a sidebar panel with symbol overview, usages, blame, tests (heuristic), and coverage (if coverage files exist).
 - **Smell CodeLens + Quick Fixes**: shows smell counts per function and offers safe quick fixes for certain smells.
 - **Test Gap CodeLens + Quick Fixes**: shows branch coverage per function and offers test stub actions for gaps.
 - **Coach Mode (inline hints)**: optional inlay hints that annotate lines with quick explanations.
 
 ## AI (optional)
 
-This extension can store API keys securely (VS Code Secret Storage) and supports OpenRouter, OpenAI, Anthropic, and Gemini. OpenRouter is the default provider.
+This extension can store API keys securely (VS Code Secret Storage) and supports OpenRouter, OpenAI, Anthropic, Gemini, plus local providers (Ollama, LM Studio). OpenRouter is the default provider.
 
 - Command Palette → **Code Coach: Set AI API Key**
 - Command Palette → **Code Coach: Clear AI API Key**
@@ -25,7 +26,7 @@ This extension can store API keys securely (VS Code Secret Storage) and supports
 Settings:
 
 - `codeCoach.ai.enabled` (default: false)
-- `codeCoach.ai.provider` (openrouter | openai | anthropic | gemini)
+- `codeCoach.ai.provider` (openrouter | openai | anthropic | gemini | ollama | lmstudio)
 - `codeCoach.ai.baseUrl` (override provider default)
 - `codeCoach.ai.endpointPath` (override provider default; supports `{model}` placeholder)
 - `codeCoach.ai.model` (override provider default)
@@ -45,6 +46,11 @@ Settings:
   - `codeCoach.coachMode.maxHints`
 - Telemetry (local only):
   - `codeCoach.telemetry.enabled`
+- Enterprise controls:
+  - `codeCoach.enterprise.allowedAiProviders`
+  - `codeCoach.enterprise.auditLogPath`
+- Test gaps:
+  - `codeCoach.testGaps.coveragePaths`
 
 AI citation behavior:
 - AI explanations are asked to include line citations (e.g., `src/file.ts:42` or `L42`).
@@ -64,6 +70,7 @@ Prompt optimizer layer:
 - Hover over an error underline → see the **Code Coach** hover
 - Command Palette → **Code Coach: Explain Diagnostic** (uses the diagnostic under your cursor, else the first in the file)
 - Command Palette → **Code Coach: Trace Diagnostic Origin**
+- Command Palette → **Code Coach: Trace Stack Trace**
 - Command Palette → **Code Coach: Show Code Smells**
 - Command Palette → **Code Coach: Show Test Gaps**
 - Command Palette → **Code Coach: Deep Dive** (uses the symbol under your cursor)
@@ -82,4 +89,4 @@ Run the extension:
 
 ## Notes
 
-This MVP is static-only: it does not run your code or capture runtime values.
+This MVP is primarily static-only; optional runtime capture is available when debugging is enabled.
