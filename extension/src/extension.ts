@@ -801,7 +801,7 @@ function showInPanel(viewType: string, title: string, content: string): void {
   panel.webview.html = buildPanelHtml(title, content);
 }
 
-function showInPeek(_title: string, content: string): void {
+function showInPeek(title: string, content: string): void {
   if (!peekProvider) {
     outputChannel?.appendLine(content);
     outputChannel?.show(true);
@@ -815,7 +815,8 @@ function showInPeek(_title: string, content: string): void {
     return;
   }
 
-  const uri = peekProvider.createDocument(content);
+  const markdown = renderPeekContent(title, content);
+  const uri = peekProvider.createDocument(markdown, title);
   const location = new vscode.Location(uri, new vscode.Position(0, 0));
   void vscode.commands.executeCommand(
     'editor.action.peekLocations',
@@ -895,6 +896,26 @@ function renderPanelContent(content: string): string {
   return linkifyCitations(content);
 }
 
+function renderPeekContent(title: string, content: string): string {
+  const trimmed = content.trimEnd();
+  if (!trimmed) {
+    return `# ${title}\n`;
+  }
+
+  const lines = trimmed.split('\n');
+  const first = lines[0]?.trim() ?? '';
+  if (first.startsWith('#')) {
+    return trimmed;
+  }
+
+  const heading = first.length > 0 ? first : title;
+  const rest = lines.slice(1).join('\n').replace(/^\n+/, '');
+  if (!rest) {
+    return `# ${heading}\n`;
+  }
+  return `# ${heading}\n\n${rest}`;
+}
+
 function linkifyCitations(content: string): string {
   const citationRegex = /(^|[^\\w/\\\\.-])([\\w./\\\\-]+\\.[A-Za-z0-9]+):(\\d+)(?::(\\d+))?/g;
   let result = '';
@@ -953,9 +974,10 @@ class PeekContentProvider implements vscode.TextDocumentContentProvider {
     return this.contents.get(uri.toString()) ?? '';
   }
 
-  createDocument(content: string): vscode.Uri {
+  createDocument(content: string, label?: string): vscode.Uri {
     const id = `${Date.now()}-${this.counter++}`;
-    const uri = vscode.Uri.from({ scheme: 'codecoach', path: `/peek-${id}.txt` });
+    const slug = label ? slugifyLabel(label) : 'code-coach';
+    const uri = vscode.Uri.from({ scheme: 'codecoach', path: `/${slug}-${id}.md` });
     const key = uri.toString();
     this.contents.set(key, content);
     this.order.push(key);
@@ -971,6 +993,14 @@ class PeekContentProvider implements vscode.TextDocumentContentProvider {
       this.contents.delete(key);
     }
   }
+}
+
+function slugifyLabel(value: string): string {
+  const cleaned = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return cleaned || 'code-coach';
 }
 
 async function buildDiagnosticOriginData(

@@ -37,7 +37,7 @@ Settings:
   - `codeCoach.ui.runtimeException`
   - `codeCoach.ui.codeSmells`
   - `codeCoach.ui.testGaps`
-  (values: `output`, `panel`, or `peek`)
+  (values: `output`, `panel`, or `peek`; peek renders a Markdown-styled view)
 
 AI citation behavior:
 - AI explanations are asked to include line citations (e.g., `src/file.ts:42` or `L42`).
