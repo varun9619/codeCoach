@@ -9,7 +9,9 @@ import { aiExplain } from './aiClient';
 import { verifyAiResult } from './aiVerify';
 import { analyzeDocumentForSmells, CodeSmell } from './smells';
 import { SmellCodeActionProvider, SmellCodeLensProvider, toSmellDiagnostic } from './smellProviders';
+import { DiagnosticFixCodeActionProvider } from './diagnosticFixes';
 import { TestGapCodeActionProvider, TestGapCodeLensProvider } from './testGapProviders';
+import { CoachModeInlayProvider } from './coachMode';
 import {
   BranchSummary,
   TestGap,
@@ -29,7 +31,9 @@ let deepDiveProvider: DeepDiveProvider | undefined;
 let deepDiveView: vscode.TreeView<any> | undefined;
 let smellCodeLensProvider: SmellCodeLensProvider | undefined;
 let testGapCodeLensProvider: TestGapCodeLensProvider | undefined;
+let coachModeProvider: CoachModeInlayProvider | undefined;
 let peekProvider: PeekContentProvider | undefined;
+let peekLinkProvider: PeekCitationLinkProvider | undefined;
 const panels = new Map<string, vscode.WebviewPanel>();
 
 export function activate(context: vscode.ExtensionContext) {
@@ -43,7 +47,9 @@ export function activate(context: vscode.ExtensionContext) {
     deepDiveProvider = new DeepDiveProvider();
     smellCodeLensProvider = new SmellCodeLensProvider();
     testGapCodeLensProvider = new TestGapCodeLensProvider();
+    coachModeProvider = new CoachModeInlayProvider();
     peekProvider = new PeekContentProvider();
+    peekLinkProvider = new PeekCitationLinkProvider();
 
     // Startup logging for debugging
     outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -76,6 +82,8 @@ export function activate(context: vscode.ExtensionContext) {
     smellDiagnostics,
     testGapDiagnostics,
     vscode.workspace.registerTextDocumentContentProvider('codecoach', peekProvider),
+    vscode.languages.registerDocumentLinkProvider({ scheme: 'codecoach' }, peekLinkProvider),
+    vscode.window.registerUriHandler(new CodeCoachUriHandler()),
     (deepDiveView = vscode.window.createTreeView('codeCoach.deepDive', { treeDataProvider: deepDiveProvider })),
     vscode.commands.registerCommand('codeCoach.explainSelection', async () => {
       const editor = vscode.window.activeTextEditor;
@@ -169,6 +177,17 @@ export function activate(context: vscode.ExtensionContext) {
 
       const msg = explainDiagnostic(diag, editor.document.languageId);
       presentResult('Code Coach: Explain Diagnostic', 'codeCoach.ui.explainDiagnostic', msg);
+    }),
+
+    vscode.commands.registerCommand('codeCoach.explainDiagnosticAt', async (uri?: vscode.Uri, position?: vscode.Position) => {
+      if (!uri || !position) {
+        await vscode.commands.executeCommand('codeCoach.explainDiagnostic');
+        return;
+      }
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const editor = await vscode.window.showTextDocument(doc, { preview: true });
+      editor.selection = new vscode.Selection(position, position);
+      await vscode.commands.executeCommand('codeCoach.explainDiagnostic');
     }),
 
     vscode.commands.registerCommand('codeCoach.traceDiagnosticOrigin', async () => {
@@ -467,6 +486,15 @@ export function activate(context: vscode.ExtensionContext) {
       ],
       testGapCodeLensProvider ?? new TestGapCodeLensProvider()
     ),
+    vscode.languages.registerInlayHintsProvider(
+      [
+        { language: 'javascript' },
+        { language: 'typescript' },
+        { language: 'javascriptreact' },
+        { language: 'typescriptreact' }
+      ],
+      coachModeProvider ?? new CoachModeInlayProvider()
+    ),
     vscode.languages.registerCodeActionsProvider(
       [
         { language: 'javascript' },
@@ -484,6 +512,16 @@ export function activate(context: vscode.ExtensionContext) {
         { language: 'javascriptreact' },
         { language: 'typescriptreact' }
       ],
+      new DiagnosticFixCodeActionProvider(),
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+    ),
+    vscode.languages.registerCodeActionsProvider(
+      [
+        { language: 'javascript' },
+        { language: 'typescript' },
+        { language: 'javascriptreact' },
+        { language: 'typescriptreact' }
+      ],
       new TestGapCodeActionProvider(),
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
     ),
@@ -492,6 +530,12 @@ export function activate(context: vscode.ExtensionContext) {
       if (lang.startsWith('javascript') || lang.startsWith('typescript')) {
         smellCodeLensProvider?.refresh();
         testGapCodeLensProvider?.refresh();
+        coachModeProvider?.refresh();
+      }
+    }),
+    vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('codeCoach.coachMode')) {
+        coachModeProvider?.refresh();
       }
     })
   );
@@ -704,7 +748,9 @@ export function deactivate() {
   deepDiveView = undefined;
   smellCodeLensProvider = undefined;
   testGapCodeLensProvider = undefined;
+  coachModeProvider = undefined;
   peekProvider = undefined;
+  peekLinkProvider = undefined;
   for (const panel of panels.values()) {
     panel.dispose();
   }
@@ -1001,6 +1047,56 @@ function slugifyLabel(value: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return cleaned || 'code-coach';
+}
+
+class PeekCitationLinkProvider implements vscode.DocumentLinkProvider {
+  provideDocumentLinks(document: vscode.TextDocument): vscode.DocumentLink[] {
+    const links: vscode.DocumentLink[] = [];
+    const regex = /(^|[^\w/\\.-])([\w./\\-]+\.[A-Za-z0-9]+):(\d+)(?::(\d+))?/g;
+
+    for (let lineNumber = 0; lineNumber < document.lineCount; lineNumber += 1) {
+      const line = document.lineAt(lineNumber).text;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(line)) !== null) {
+        const [, prefix, filePart, linePart, columnPart] = match;
+        const start = match.index + prefix.length;
+        const length = filePart.length + 1 + linePart.length + (columnPart ? 1 + columnPart.length : 0);
+        const resolved = resolveCitationPath(filePart);
+        if (!resolved) continue;
+        const lineNumberTarget = Number(linePart);
+        if (Number.isNaN(lineNumberTarget)) continue;
+        const columnNumberTarget = columnPart ? Number(columnPart) : 1;
+        const target = createCodeCoachOpenUri(resolved, lineNumberTarget, columnNumberTarget);
+        const range = new vscode.Range(lineNumber, start, lineNumber, start + length);
+        links.push(new vscode.DocumentLink(range, target));
+      }
+    }
+
+    return links;
+  }
+}
+
+class CodeCoachUriHandler implements vscode.UriHandler {
+  async handleUri(uri: vscode.Uri): Promise<void> {
+    if (uri.scheme !== 'codecoach-open') return;
+    const params = new URLSearchParams(uri.query);
+    const filePath = params.get('path');
+    if (!filePath) return;
+    const line = Number(params.get('line') ?? '1');
+    const column = Number(params.get('col') ?? '1');
+    const targetUri = vscode.Uri.file(filePath);
+    const position = new vscode.Position(Math.max(0, line - 1), Math.max(0, column - 1));
+    await vscode.commands.executeCommand('codeCoach.openLocation', targetUri, new vscode.Range(position, position));
+  }
+}
+
+function createCodeCoachOpenUri(filePath: string, line: number, column: number): vscode.Uri {
+  const query = new URLSearchParams({
+    path: filePath,
+    line: String(line),
+    col: String(column)
+  }).toString();
+  return vscode.Uri.from({ scheme: 'codecoach-open', path: '/open', query });
 }
 
 async function buildDiagnosticOriginData(

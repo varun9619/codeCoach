@@ -252,6 +252,18 @@
           ],
           "default": "output",
           "description": "Where to display Test Gap reports."
+        },
+        "codeCoach.coachMode.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Coach Mode inline annotations (inlay hints)."
+        },
+        "codeCoach.coachMode.maxHints": {
+          "type": "number",
+          "default": 40,
+          "minimum": 5,
+          "maximum": 200,
+          "description": "Maximum number of Coach Mode hints per file."
         }
       }
     },

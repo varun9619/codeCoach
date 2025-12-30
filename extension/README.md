@@ -6,12 +6,14 @@ A minimal static-only MVP that helps you understand code and diagnostics.
 
 - **Explain Selection**: highlight code and get a line-by-line plain-English walkthrough.
 - **Explain Diagnostic**: hover on a VS Code diagnostic to see a plain-English explanation + likely causes + fixes.
+- **Diagnostic Quick Fixes**: lightbulb offers optional chaining / non-null assertion / implicit-any fixes where safe.
 - **Trace Diagnostic Origin**: trace a diagnostic back to its enclosing symbol and likely callers.
 - **Show Code Smells**: run a static analysis pass for common performance/maintainability issues.
 - **Test Gap Finder**: uses `lcov.info` to highlight uncovered branches and suggest test inputs.
-- **Deep Dive**: open a sidebar panel with symbol overview, usages, blame, and coverage (if lcov exists).
+- **Deep Dive**: open a sidebar panel with symbol overview, usages, blame, tests (heuristic), and coverage (if lcov exists).
 - **Smell CodeLens + Quick Fixes**: shows smell counts per function and offers safe quick fixes for certain smells.
 - **Test Gap CodeLens + Quick Fixes**: shows branch coverage per function and offers test stub actions for gaps.
+- **Coach Mode (inline hints)**: optional inlay hints that annotate lines with quick explanations.
 
 ## AI (optional)
 
@@ -38,6 +40,9 @@ Settings:
   - `codeCoach.ui.codeSmells`
   - `codeCoach.ui.testGaps`
   (values: `output`, `panel`, or `peek`; peek renders a Markdown-styled view)
+- Coach Mode:
+  - `codeCoach.coachMode.enabled`
+  - `codeCoach.coachMode.maxHints`
 
 AI citation behavior:
 - AI explanations are asked to include line citations (e.g., `src/file.ts:42` or `L42`).
@@ -60,6 +65,7 @@ Prompt optimizer layer:
 - Command Palette → **Code Coach: Show Code Smells**
 - Command Palette → **Code Coach: Show Test Gaps**
 - Command Palette → **Code Coach: Deep Dive** (uses the symbol under your cursor)
+- Toggle Coach Mode → Settings: `codeCoach.coachMode.enabled`
 
 ## Development
 

@@ -91,6 +91,67 @@ function explainByKnownPatterns(diag: vscode.Diagnostic, languageId: string): Di
         ]
       };
     }
+
+    if (code === 2532 || code === 2531) {
+      return {
+        causes: [
+          'A value might be null or undefined at this point in the code path.'
+        ],
+        fixes: [
+          'Add a guard before using the value (if check, early return, or default).',
+          'Use optional chaining when accessing properties (`obj?.prop`).',
+          'If you are certain the value exists, use a non-null assertion (`obj!.prop`) with caution.'
+        ]
+      };
+    }
+
+    if (code === 2722) {
+      return {
+        causes: [
+          'You are calling a function that could be undefined at runtime.'
+        ],
+        fixes: [
+          'Check the function exists before calling it (`if (fn) fn()` or `fn?.()`).',
+          'Tighten the type so the function is always defined.'
+        ]
+      };
+    }
+
+    if (code === 7006) {
+      return {
+        causes: [
+          'A function parameter has an implicit `any` type because no annotation is provided.'
+        ],
+        fixes: [
+          'Add an explicit type annotation to the parameter.',
+          'If this is intentional, adjust your TS config (noImplicitAny) or use `: any` explicitly.'
+        ]
+      };
+    }
+
+    if (code === 2554) {
+      return {
+        causes: [
+          'The function call does not match the required number of parameters.'
+        ],
+        fixes: [
+          'Check the function signature and pass the required arguments.',
+          'If some arguments are optional, ensure the signature marks them as optional.'
+        ]
+      };
+    }
+
+    if (code === 6133) {
+      return {
+        causes: [
+          'A variable is declared but never used.'
+        ],
+        fixes: [
+          'Remove the unused variable, or use it if it was intended.',
+          'If this is a required placeholder, prefix it with `_` to silence the warning.'
+        ]
+      };
+    }
   }
 
   // Generic fallback

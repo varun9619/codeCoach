@@ -15,6 +15,7 @@ export type DeepDiveData = {
   usages: vscode.Location[];
   blame: BlameEntry[];
   coverage?: CoverageSummary;
+  tests: TestReference[];
 };
 
 export type CoverageSummary = {
@@ -22,6 +23,13 @@ export type CoverageSummary = {
   hitLines: number;
   uncoveredLines: number[];
   source: string;
+};
+
+export type TestReference = {
+  label: string;
+  uri: vscode.Uri;
+  range: vscode.Range;
+  description?: string;
 };
 
 export type BlameEntry = {
@@ -46,6 +54,7 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
         new DeepDiveItem('Overview', 'section'),
         new DeepDiveItem('Usages', 'section'),
         new DeepDiveItem('Blame', 'section'),
+        new DeepDiveItem('Tests', 'section'),
         new DeepDiveItem('Coverage', 'section')
       ];
     } else {
@@ -88,6 +97,11 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
           range: overview.range
         })
       ];
+      if (this.data.coverage) {
+        const coverage = this.data.coverage;
+        const percent = coverage.totalLines === 0 ? 0 : Math.round((coverage.hitLines / coverage.totalLines) * 100);
+        items.push(new DeepDiveItem(`Coverage: ${coverage.hitLines}/${coverage.totalLines} (${percent}%)`, 'item'));
+      }
       for (const item of items) this.parentMap.set(item, element);
       return items;
     }
@@ -117,6 +131,17 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
       return items;
     }
 
+    if (element.section === 'tests') {
+      if (this.data.tests.length === 0) {
+        return [new DeepDiveItem('No tests found', 'item')];
+      }
+      const items = this.data.tests.slice(0, 20).map(test => {
+        return new DeepDiveItem(test.label, 'item', { uri: test.uri, range: test.range }, test.description);
+      });
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
+    }
+
     if (element.section === 'coverage') {
       const coverage = this.data.coverage;
       if (!coverage) {
@@ -124,9 +149,16 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
       }
       const percent = coverage.totalLines === 0 ? 0 : Math.round((coverage.hitLines / coverage.totalLines) * 100);
       const summary = `Coverage: ${coverage.hitLines}/${coverage.totalLines} (${percent}%)`;
+      const fileUri = vscode.Uri.file(this.data.overview.filePath);
       const items: DeepDiveItem[] = [new DeepDiveItem(summary, 'item', undefined, coverage.source)];
       if (coverage.uncoveredLines.length > 0) {
-        items.push(new DeepDiveItem(`Uncovered lines: ${coverage.uncoveredLines.join(', ')}`, 'item'));
+        for (const line of coverage.uncoveredLines.slice(0, 15)) {
+          const range = new vscode.Range(Math.max(0, line - 1), 0, Math.max(0, line - 1), 0);
+          items.push(new DeepDiveItem(`Uncovered line L${line}`, 'item', { uri: fileUri, range }));
+        }
+        if (coverage.uncoveredLines.length > 15) {
+          items.push(new DeepDiveItem(`...and ${coverage.uncoveredLines.length - 15} more uncovered lines`, 'item'));
+        }
       }
       for (const item of items) this.parentMap.set(item, element);
       return items;
@@ -141,7 +173,7 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
 }
 
 export class DeepDiveItem extends vscode.TreeItem {
-  section?: 'overview' | 'usages' | 'blame' | 'coverage';
+  section?: 'overview' | 'usages' | 'blame' | 'tests' | 'coverage';
 
   constructor(
     label: string,
@@ -192,6 +224,7 @@ export async function buildDeepDiveData(
 
   const blame = await loadBlame(document, enclosing.range);
   const coverage = await loadCoverage(document, enclosing.range);
+  const tests = await findTestsForSymbol(document, enclosing);
 
   return {
     overview: {
@@ -202,7 +235,8 @@ export async function buildDeepDiveData(
     },
     usages,
     blame,
-    coverage
+    coverage,
+    tests
   };
 }
 
@@ -352,7 +386,112 @@ function parseLcovForFile(text: string, targetPath: string, range: vscode.Range)
   return {
     totalLines: lineNumbers.length,
     hitLines,
-    uncoveredLines: uncovered.slice(0, 10),
+    uncoveredLines: uncovered.slice(0, 100),
     source: 'lcov.info'
   };
+}
+
+const testFileCache = new Map<string, { updatedAt: number; files: vscode.Uri[] }>();
+const TEST_FILE_TTL_MS = 10000;
+
+async function findTestsForSymbol(
+  document: vscode.TextDocument,
+  symbol: vscode.DocumentSymbol
+): Promise<TestReference[]> {
+  if (!symbol.name) return [];
+  const testFiles = await findTestFiles(document.uri);
+  if (testFiles.length === 0) return [];
+
+  const results: TestReference[] = [];
+  for (const uri of testFiles) {
+    if (results.length >= 20) break;
+    try {
+      const data = await vscode.workspace.fs.readFile(uri);
+      const text = Buffer.from(data).toString('utf8');
+      const index = text.indexOf(symbol.name);
+      if (index === -1) continue;
+      const { lineNumber, column } = findLineAndColumn(text, index);
+      const lineText = readLine(text, lineNumber - 1);
+      const range = new vscode.Range(lineNumber - 1, column, lineNumber - 1, column + symbol.name.length);
+      const label = `${vscode.workspace.asRelativePath(uri.fsPath)}:${lineNumber}`;
+      const description = findNearestTestName(text, lineNumber - 1);
+      const fallback = lineText.trim();
+      results.push({
+        label,
+        uri,
+        range,
+        description: description ?? (fallback || undefined)
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return results;
+}
+
+async function findTestFiles(sourceUri: vscode.Uri): Promise<vscode.Uri[]> {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(sourceUri);
+  if (!workspaceFolder) return [];
+
+  const cacheKey = workspaceFolder.uri.toString();
+  const cached = testFileCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.updatedAt < TEST_FILE_TTL_MS) {
+    return cached.files;
+  }
+
+  const patterns = [
+    '**/*.test.ts',
+    '**/*.test.tsx',
+    '**/*.test.js',
+    '**/*.test.jsx',
+    '**/*.spec.ts',
+    '**/*.spec.tsx',
+    '**/*.spec.js',
+    '**/*.spec.jsx',
+    '**/__tests__/**/*.ts',
+    '**/__tests__/**/*.tsx',
+    '**/__tests__/**/*.js',
+    '**/__tests__/**/*.jsx'
+  ];
+  const exclude = '**/node_modules/**';
+
+  const filesMap = new Map<string, vscode.Uri>();
+  for (const pattern of patterns) {
+    const files = await vscode.workspace.findFiles(pattern, exclude, 200);
+    for (const file of files) {
+      filesMap.set(file.toString(), file);
+    }
+  }
+
+  const files = Array.from(filesMap.values());
+  testFileCache.set(cacheKey, { updatedAt: now, files });
+  return files;
+}
+
+function findLineAndColumn(text: string, index: number): { lineNumber: number; column: number } {
+  const upto = text.slice(0, index);
+  const lines = upto.split('\n');
+  const lineNumber = lines.length;
+  const column = lines[lines.length - 1]?.length ?? 0;
+  return { lineNumber, column };
+}
+
+function readLine(text: string, lineIndex: number): string {
+  const lines = text.split('\n');
+  if (lineIndex < 0 || lineIndex >= lines.length) return '';
+  return lines[lineIndex];
+}
+
+function findNearestTestName(text: string, lineIndex: number): string | undefined {
+  const lines = text.split('\n');
+  const regex = /\b(describe|it|test)\s*\(\s*(['"`])(.+?)\2/;
+  for (let i = Math.min(lineIndex, lines.length - 1); i >= 0; i -= 1) {
+    const match = regex.exec(lines[i]);
+    if (match) {
+      return `${match[1]}: ${match[3]}`;
+    }
+  }
+  return undefined;
 }
