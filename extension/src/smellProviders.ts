@@ -93,35 +93,37 @@ function buildFix(document: vscode.TextDocument, diag: vscode.Diagnostic, kind: 
   const text = document.getText(range);
 
   if (kind === 'debugger' || kind === 'console-log') {
-    const action = new vscode.CodeAction('Remove statement', vscode.CodeActionKind.QuickFix);
-    const edit = new vscode.WorkspaceEdit();
-    edit.delete(document.uri, range);
-    action.edit = edit;
-    action.diagnostics = [diag];
-    return action;
+    return buildPreviewFix('Remove statement', document, range, '', diag);
   }
 
   if (kind === 'explicit-any') {
-    const action = new vscode.CodeAction('Replace any with unknown', vscode.CodeActionKind.QuickFix);
-    const edit = new vscode.WorkspaceEdit();
-    edit.replace(document.uri, range, 'unknown');
-    action.edit = edit;
-    action.diagnostics = [diag];
-    return action;
+    return buildPreviewFix('Replace any with unknown', document, range, 'unknown', diag);
   }
 
   if (kind === 'eqeq') {
     const replacement = text.replace('==', '===').replace('!=', '!==');
     if (replacement === text) return undefined;
-    const action = new vscode.CodeAction('Use strict equality', vscode.CodeActionKind.QuickFix);
-    const edit = new vscode.WorkspaceEdit();
-    edit.replace(document.uri, range, replacement);
-    action.edit = edit;
-    action.diagnostics = [diag];
-    return action;
+    return buildPreviewFix('Use strict equality', document, range, replacement, diag);
   }
 
   return undefined;
+}
+
+function buildPreviewFix(
+  title: string,
+  document: vscode.TextDocument,
+  range: vscode.Range,
+  replacement: string,
+  diag: vscode.Diagnostic
+): vscode.CodeAction {
+  const action = new vscode.CodeAction(title, vscode.CodeActionKind.QuickFix);
+  action.command = {
+    command: 'codeCoach.previewSmellFix',
+    title,
+    arguments: [document.uri, range, replacement, title]
+  };
+  action.diagnostics = [diag];
+  return action;
 }
 
 export function toSmellDiagnostic(smell: CodeSmell): vscode.Diagnostic {

@@ -42,6 +42,7 @@ let deepDiveView: vscode.TreeView<any> | undefined;
 let lastDeepDiveData: DeepDiveData | undefined;
 let deepDivePins: DeepDivePin[] = [];
 const DEEP_DIVE_PIN_KEY = 'codeCoach.deepDive.pins';
+const ONBOARDING_SHOWN_KEY = 'codeCoach.onboardingShown';
 let smellCodeLensProvider: SmellCodeLensProvider | undefined;
 let testGapCodeLensProvider: TestGapCodeLensProvider | undefined;
 let coachModeProvider: CoachModeInlayProvider | undefined;
@@ -79,6 +80,7 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('');
     outputChannel.appendLine('Commands available:');
     outputChannel.appendLine('  • Code Coach: Explain Selection');
+    outputChannel.appendLine('  • Code Coach: Explain Why This Works');
     outputChannel.appendLine('  • Code Coach: Explain Diagnostic');
     outputChannel.appendLine('  • Code Coach: Explain Last Exception');
     outputChannel.appendLine('  • Code Coach: Trace Diagnostic Origin');
@@ -97,6 +99,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Also show a VS Code notification for visibility
     vscode.window.showInformationMessage('Code Coach extension activated!');
+
+    void maybeShowOnboarding(context);
 
     const runtime = registerRuntimeTracing(context, outputChannel);
 
@@ -184,6 +188,66 @@ export function activate(context: vscode.ExtensionContext) {
         feature: 'explain_selection',
         mode: modeLabel,
         surface: getUiSurface('codeCoach.ui.explainSelection'),
+        lines: selection.end.line - selection.start.line + 1
+      });
+    }),
+
+    vscode.commands.registerCommand('codeCoach.explainWhyWorks', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage('Open a file and select code to analyze.');
+        return;
+      }
+
+      const selection = editor.selection;
+      if (selection.isEmpty) {
+        vscode.window.showInformationMessage('Select some code first.');
+        return;
+      }
+
+      const text = editor.document.getText(selection);
+      let explanation: string;
+      let modeLabel: 'AI' | 'Static' = 'Static';
+      let aiFailure: string | undefined;
+
+      try {
+        const ai = await aiExplain(context, {
+          kind: 'why',
+          languageId: editor.document.languageId,
+          code: text,
+          filePath: editor.document.uri.fsPath,
+          startLineNumber: selection.start.line + 1,
+          endLineNumber: selection.end.line + 1
+        });
+        const verification = verifyAiResult(ai, {
+          lineRange: { start: selection.start.line + 1, end: selection.end.line + 1 },
+          requireCitations: true
+        });
+        modeLabel = 'AI';
+        explanation = ai.explanationMarkdown;
+        if (!verification.verified) {
+          explanation += `\n\n---\nVerification notes:\n${verification.notes.map(n => `- ${n}`).join('\n')}`;
+        }
+      } catch (err: any) {
+        aiFailure = err instanceof Error ? err.message : String(err);
+        explanation = buildWhyWorksFallback(editor.document, text, selection.start.line + 1);
+      }
+
+      const related = await buildRelatedSection(editor.document, selection);
+      if (related) {
+        explanation += `\n\n${related}`;
+      }
+
+      explanation = `Code Coach (Mode: ${modeLabel})\n` + explanation;
+      if (modeLabel === 'Static' && aiFailure) {
+        explanation += `\n\nAI was enabled but not used because the AI request failed:\n- ${aiFailure}`;
+      }
+
+      presentResult('Code Coach: Explain Why This Works', 'codeCoach.ui.explainWhyWorks', explanation);
+      trackEvent('feature_used', {
+        feature: 'explain_why_works',
+        mode: modeLabel,
+        surface: getUiSurface('codeCoach.ui.explainWhyWorks'),
         lines: selection.end.line - selection.start.line + 1
       });
     }),
@@ -406,6 +470,7 @@ export function activate(context: vscode.ExtensionContext) {
           return;
         }
 
+        await maybeAttachDeepDiveSummary(context, editor.document, data);
         deepDiveProvider?.setData(data);
         lastDeepDiveData = data;
         await vscode.commands.executeCommand('workbench.view.explorer');
@@ -553,6 +618,18 @@ export function activate(context: vscode.ExtensionContext) {
       trackEvent('feature_used', { feature: 'deep_dive_export', format: format.value });
     }),
 
+    vscode.commands.registerCommand('codeCoach.onboarding.run', async () => {
+      await runOnboarding(context, true);
+    }),
+
+    vscode.commands.registerCommand('codeCoach.feedback.helpful', async () => {
+      await captureFeedback(true);
+    }),
+
+    vscode.commands.registerCommand('codeCoach.feedback.notHelpful', async () => {
+      await captureFeedback(false);
+    }),
+
     vscode.commands.registerCommand('codeCoach.openLocation', async (uri: vscode.Uri, range: vscode.Range) => {
       const doc = await vscode.workspace.openTextDocument(uri);
       await vscode.window.showTextDocument(doc, {
@@ -560,6 +637,30 @@ export function activate(context: vscode.ExtensionContext) {
         preview: true
       });
     }),
+
+    vscode.commands.registerCommand(
+      'codeCoach.previewSmellFix',
+      async (uri: vscode.Uri, range: vscode.Range, replacement: string, title: string) => {
+        const doc = await vscode.workspace.openTextDocument(uri);
+        const original = doc.getText();
+        const startOffset = doc.offsetAt(range.start);
+        const endOffset = doc.offsetAt(range.end);
+        const updated = `${original.slice(0, startOffset)}${replacement}${original.slice(endOffset)}`;
+
+        const previewDoc = await vscode.workspace.openTextDocument({
+          content: updated,
+          language: doc.languageId
+        });
+
+        await vscode.commands.executeCommand('vscode.diff', uri, previewDoc.uri, title);
+        const choice = await vscode.window.showInformationMessage('Apply this fix?', 'Apply', 'Cancel');
+        if (choice !== 'Apply') return;
+
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(uri, range, replacement);
+        await vscode.workspace.applyEdit(edit);
+      }
+    ),
 
     vscode.commands.registerCommand('codeCoach.explainLastException', async () => {
       const report = runtime.getLastExceptionReport();
@@ -1114,6 +1215,8 @@ function getDeepDiveSections(): Array<{ id: DeepDiveSection; label: string }> {
     { id: 'overview', label: 'Overview' },
     { id: 'usages', label: 'Usages' },
     { id: 'blame', label: 'Blame' },
+    { id: 'history', label: 'History' },
+    { id: 'summary', label: 'Summary' },
     { id: 'tests', label: 'Tests' },
     { id: 'coverage', label: 'Coverage' }
   ];
@@ -1140,6 +1243,8 @@ function applyDeepDiveSectionFilter(): void {
       normalized === 'overview' ||
       normalized === 'usages' ||
       normalized === 'blame' ||
+      normalized === 'history' ||
+      normalized === 'summary' ||
       normalized === 'tests' ||
       normalized === 'coverage'
     ) {
@@ -1205,6 +1310,192 @@ async function pickDeepDivePinId(pins: DeepDivePin[], title: string): Promise<st
   }));
   const picked = await vscode.window.showQuickPick(items, { title });
   return picked?.id;
+}
+
+async function maybeAttachDeepDiveSummary(
+  context: vscode.ExtensionContext,
+  document: vscode.TextDocument,
+  data: DeepDiveData
+): Promise<void> {
+  const config = vscode.workspace.getConfiguration('codeCoach');
+  const summaryEnabled = config.get<boolean>('deepDive.aiSummary', true);
+  const aiEnabled = config.get<boolean>('ai.enabled', false);
+  const selectionText = document.getText(data.overview.range);
+
+  if (!summaryEnabled) {
+    data.summary = undefined;
+    return;
+  }
+
+  if (!aiEnabled) {
+    data.summary = { text: buildStaticDeepDiveSummary(data), source: 'static' };
+    return;
+  }
+
+  try {
+    const summaryContext = buildDeepDiveContext(data, document);
+    const ai = await aiExplain(context, {
+      kind: 'deepDive',
+      languageId: document.languageId,
+      code: selectionText,
+      filePath: document.uri.fsPath,
+      startLineNumber: data.overview.range.start.line + 1,
+      endLineNumber: data.overview.range.end.line + 1,
+      context: summaryContext
+    });
+
+    const verification = verifyAiResult(ai, {
+      lineRange: { start: data.overview.range.start.line + 1, end: data.overview.range.end.line + 1 },
+      requireCitations: true
+    });
+
+    let text = ai.explanationMarkdown.trim();
+    if (!verification.verified) {
+      text += `\n\n---\nVerification notes:\n${verification.notes.map(n => `- ${n}`).join('\n')}`;
+    }
+    data.summary = { text, source: 'ai' };
+  } catch (err: any) {
+    const message = err instanceof Error ? err.message : String(err);
+    data.summary = { text: `AI summary unavailable: ${message}`, source: 'static' };
+  }
+}
+
+function buildDeepDiveContext(data: DeepDiveData, document: vscode.TextDocument): string[] {
+  const relPath = vscode.workspace.asRelativePath(document.uri.fsPath);
+  const percent =
+    data.coverage && data.coverage.totalLines > 0
+      ? Math.round((data.coverage.hitLines / data.coverage.totalLines) * 100)
+      : undefined;
+
+  const context: string[] = [
+    `Symbol: ${data.overview.name} (${symbolKindLabel(data.overview.kind)})`,
+    `Location: ${relPath}:${data.overview.range.start.line + 1}`,
+    `Usages: ${data.usages.length}`,
+    `Tests: ${data.tests.length}`,
+    `Coverage: ${data.coverage ? `${percent ?? 0}%` : 'unknown'}`
+  ];
+
+  if (data.history.length > 0) {
+    context.push(`History: ${data.history.length} recent commits`);
+    for (const entry of data.history.slice(0, 3)) {
+      context.push(`- ${entry.hash}: ${entry.summary}`);
+    }
+  }
+
+  return context;
+}
+
+function buildStaticDeepDiveSummary(data: DeepDiveData): string {
+  const relPath = vscode.workspace.asRelativePath(data.overview.filePath);
+  const percent =
+    data.coverage && data.coverage.totalLines > 0
+      ? Math.round((data.coverage.hitLines / data.coverage.totalLines) * 100)
+      : 0;
+  return [
+    `Symbol ${data.overview.name} (${symbolKindLabel(data.overview.kind)}) is defined at ${relPath}:${data.overview.range.start.line + 1}.`,
+    `Usages: ${data.usages.length}. Tests: ${data.tests.length}. Coverage: ${data.coverage ? `${percent}%` : 'unknown'}.`
+  ].join(' ');
+}
+
+function buildWhyWorksFallback(
+  document: vscode.TextDocument,
+  text: string,
+  startLineNumber: number
+): string {
+  const out: string[] = [];
+  out.push('Code Coach — Why This Works');
+  out.push('');
+  out.push('Assumptions (static inference):');
+  out.push('- Inputs are valid and match expected types/shapes.');
+  out.push('- Dependencies return the expected data formats.');
+  out.push('');
+  out.push('Edge cases handled:');
+  out.push('- Not detectable without runtime or tests.');
+  out.push('');
+  out.push('Edge cases not handled:');
+  out.push('- Null/undefined inputs or unexpected data shapes may break this code.');
+  out.push('');
+  out.push('What could break this:');
+  out.push('- Changes in upstream APIs or data contracts.');
+  out.push('- Silent failures in async calls or missing error handling.');
+  out.push('');
+  out.push('Static walkthrough:');
+  out.push(explainSelection({ text, languageId: document.languageId, startLineNumber }));
+  return out.join('\n');
+}
+
+async function maybeShowOnboarding(context: vscode.ExtensionContext): Promise<void> {
+  const shown = context.globalState.get<boolean>(ONBOARDING_SHOWN_KEY, false);
+  if (shown) return;
+  await runOnboarding(context, false);
+  await context.globalState.update(ONBOARDING_SHOWN_KEY, true);
+}
+
+async function runOnboarding(context: vscode.ExtensionContext, force: boolean): Promise<void> {
+  const config = vscode.workspace.getConfiguration('codeCoach');
+  const currentMode = config.get<string>('privacy.mode', 'offline');
+  const choice = await vscode.window.showQuickPick(
+    [
+      { label: 'Offline', description: 'No network calls (static only)', value: 'offline' },
+      { label: 'Local', description: 'Local LLM only (Ollama / LM Studio)', value: 'local' },
+      { label: 'Redacted', description: 'Sanitized context to cloud LLMs', value: 'redacted' },
+      { label: 'Full', description: 'Full context to cloud LLMs', value: 'full' }
+    ],
+    {
+      title: 'Code Coach — Choose Privacy Mode',
+      placeHolder: `Current: ${currentMode}`,
+      ignoreFocusOut: true
+    }
+  );
+
+  if (choice) {
+    await config.update('privacy.mode', choice.value, vscode.ConfigurationTarget.Global);
+  } else if (!force) {
+    return;
+  }
+
+  const step1 = await vscode.window.showInformationMessage(
+    'Step 1: Select code and run "Code Coach: Explain Selection".',
+    'Open Command Palette',
+    'Next',
+    'Close'
+  );
+  if (step1 === 'Open Command Palette') {
+    await vscode.commands.executeCommand('workbench.action.showCommands');
+  }
+  if (step1 === 'Close') return;
+
+  const step2 = await vscode.window.showInformationMessage(
+    'Step 2: Hover a diagnostic to see the enhanced explanation.',
+    'Next',
+    'Close'
+  );
+  if (step2 === 'Close') return;
+
+  await vscode.window.showInformationMessage(
+    'Step 3: Run "Code Coach: Deep Dive" on a symbol to see usages, history, and tests.'
+  );
+
+  trackEvent('onboarding_completed', { mode: choice?.value ?? currentMode });
+}
+
+async function captureFeedback(helpful: boolean): Promise<void> {
+  const options = [
+    { label: 'Explain Selection', value: 'explain_selection' },
+    { label: 'Explain Why This Works', value: 'explain_why_works' },
+    { label: 'Explain Diagnostic', value: 'explain_diagnostic' },
+    { label: 'Trace Diagnostic Origin', value: 'trace_origin' },
+    { label: 'Trace Stack Trace', value: 'trace_stack' },
+    { label: 'Code Smells', value: 'code_smells' },
+    { label: 'Test Gaps', value: 'test_gaps' },
+    { label: 'Deep Dive', value: 'deep_dive' }
+  ];
+  const picked = await vscode.window.showQuickPick(options, {
+    title: helpful ? 'What was helpful?' : 'What was not helpful?'
+  });
+  if (!picked) return;
+  trackEvent('feedback', { helpful, feature: picked.value });
+  vscode.window.showInformationMessage('Thanks for the feedback.');
 }
 
 function showInPanel(viewType: string, title: string, content: string): void {

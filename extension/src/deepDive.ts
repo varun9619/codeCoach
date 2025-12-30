@@ -16,6 +16,8 @@ export type DeepDiveData = {
   usages: vscode.Location[];
   blame: BlameEntry[];
   coverage?: CoverageSummary;
+  history: CommitEntry[];
+  summary?: DeepDiveSummary;
   tests: TestReference[];
 };
 
@@ -40,7 +42,19 @@ export type BlameEntry = {
   summary: string;
 };
 
-export type DeepDiveSection = 'overview' | 'usages' | 'blame' | 'tests' | 'coverage' | 'pinned';
+export type CommitEntry = {
+  hash: string;
+  author: string;
+  date: string;
+  summary: string;
+};
+
+export type DeepDiveSummary = {
+  text: string;
+  source: 'ai' | 'static';
+};
+
+export type DeepDiveSection = 'overview' | 'usages' | 'blame' | 'history' | 'summary' | 'tests' | 'coverage' | 'pinned';
 
 export type DeepDivePin = {
   id: string;
@@ -62,6 +76,8 @@ export type SerializableDeepDiveData = {
   usages: Array<{ filePath: string; line: number }>;
   blame: BlameEntry[];
   coverage?: CoverageSummary;
+  history: CommitEntry[];
+  summary?: DeepDiveSummary;
   tests: Array<{ label: string; filePath: string; line: number; description?: string }>;
 };
 
@@ -101,6 +117,8 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
         { label: 'Overview', id: 'overview' },
         { label: 'Usages', id: 'usages' },
         { label: 'Blame', id: 'blame' },
+        { label: 'History', id: 'history' },
+        { label: 'Summary', id: 'summary' },
         { label: 'Tests', id: 'tests' },
         { label: 'Coverage', id: 'coverage' }
       ];
@@ -209,6 +227,29 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
       return items;
     }
 
+    if (element.section === 'history') {
+      if (this.data.history.length === 0) {
+        return [new DeepDiveItem('No history found', 'item')];
+      }
+      const items = this.data.history.slice(0, 10).map(entry => {
+        const label = `${entry.hash} — ${entry.summary}`;
+        const description = `${entry.author} • ${entry.date}`;
+        return new DeepDiveItem(label, 'item', undefined, description);
+      });
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
+    }
+
+    if (element.section === 'summary') {
+      if (!this.data.summary) {
+        return [new DeepDiveItem('AI summary not available', 'item')];
+      }
+      const lines = this.data.summary.text.split('\n').filter(Boolean);
+      const items = lines.slice(0, 8).map(line => new DeepDiveItem(line, 'item', undefined));
+      for (const item of items) this.parentMap.set(item, element);
+      return items.length > 0 ? items : [new DeepDiveItem('Summary available', 'item')];
+    }
+
     if (element.section === 'tests') {
       if (this.data.tests.length === 0) {
         return [new DeepDiveItem('No tests found', 'item')];
@@ -293,6 +334,8 @@ export function serializeDeepDiveData(data: DeepDiveData): SerializableDeepDiveD
     })),
     blame: data.blame,
     coverage: data.coverage,
+    history: data.history,
+    summary: data.summary,
     tests: data.tests.map(test => ({
       label: test.label,
       filePath: test.uri.fsPath,
@@ -329,6 +372,24 @@ export function formatDeepDiveMarkdown(data: DeepDiveData): string {
     for (const entry of data.blame.slice(0, 20)) {
       out.push(`- L${entry.line}: ${entry.author} — ${entry.summary} (${entry.time})`);
     }
+  }
+  out.push('');
+
+  out.push('## History');
+  if (data.history.length === 0) {
+    out.push('- No history found.');
+  } else {
+    for (const entry of data.history.slice(0, 20)) {
+      out.push(`- ${entry.hash}: ${entry.summary} — ${entry.author} (${entry.date})`);
+    }
+  }
+  out.push('');
+
+  out.push('## Summary');
+  if (!data.summary) {
+    out.push('- AI summary not available.');
+  } else {
+    out.push(data.summary.text.trim());
   }
   out.push('');
 
@@ -382,6 +443,7 @@ export async function buildDeepDiveData(
   const blame = await loadBlame(document, enclosing.range);
   const coverage = await loadCoverage(document, enclosing.range);
   const tests = await findTestsForSymbol(document, enclosing);
+  const history = await loadHistory(document, enclosing.range);
 
   return {
     overview: {
@@ -392,7 +454,9 @@ export async function buildDeepDiveData(
     },
     usages,
     blame,
+    history,
     coverage,
+    summary: undefined,
     tests
   };
 }
@@ -441,6 +505,50 @@ async function loadBlame(document: vscode.TextDocument, range: vscode.Range): Pr
   } catch {
     return [];
   }
+}
+
+async function loadHistory(document: vscode.TextDocument, range: vscode.Range): Promise<CommitEntry[]> {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+  if (!workspaceFolder) return [];
+
+  const config = vscode.workspace.getConfiguration('codeCoach');
+  const rawLimit = config.get<number>('deepDive.historyLimit', 10);
+  const limit = clampNumber(rawLimit, 1, 30, 10);
+
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      [
+        'log',
+        '-n',
+        String(limit),
+        '--pretty=format:%h%x09%an%x09%ad%x09%s',
+        '--date=short',
+        '--',
+        document.uri.fsPath
+      ],
+      { cwd: workspaceFolder.uri.fsPath }
+    );
+    return parseHistory(stdout);
+  } catch {
+    return [];
+  }
+}
+
+function parseHistory(text: string): CommitEntry[] {
+  const lines = text.replace(/\r\n/g, '\n').split('\n').filter(Boolean);
+  const entries: CommitEntry[] = [];
+  for (const line of lines) {
+    const [hash, author, date, summary] = line.split('\t');
+    if (!hash || !author || !date || !summary) continue;
+    entries.push({ hash, author, date, summary });
+  }
+  return entries;
+}
+
+function clampNumber(value: number | undefined, min: number, max: number, fallback: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
 }
 
 function parseBlamePorcelain(text: string): BlameEntry[] {

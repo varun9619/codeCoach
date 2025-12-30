@@ -21,6 +21,10 @@
         "title": "Code Coach: Explain Selection"
       },
       {
+        "command": "codeCoach.explainWhyWorks",
+        "title": "Code Coach: Explain Why This Works"
+      },
+      {
         "command": "codeCoach.explainDiagnostic",
         "title": "Code Coach: Explain Diagnostic"
       },
@@ -43,6 +47,10 @@
       {
         "command": "codeCoach.showTestGaps",
         "title": "Code Coach: Show Test Gaps"
+      },
+      {
+        "command": "codeCoach.previewSmellFix",
+        "title": "Code Coach: Preview Smell Fix"
       },
       {
         "command": "codeCoach.ai.setApiKey",
@@ -79,12 +87,29 @@
       {
         "command": "codeCoach.deepDive.openPinned",
         "title": "Code Coach: Open Pinned Deep Dive"
+      },
+      {
+        "command": "codeCoach.onboarding.run",
+        "title": "Code Coach: Run Onboarding"
+      },
+      {
+        "command": "codeCoach.feedback.helpful",
+        "title": "Code Coach: Feedback (Helpful)"
+      },
+      {
+        "command": "codeCoach.feedback.notHelpful",
+        "title": "Code Coach: Feedback (Not Helpful)"
       }
     ],
     "menus": {
       "editor/context": [
         {
           "command": "codeCoach.explainSelection",
+          "when": "editorHasSelection && (editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust)",
+          "group": "navigation@50"
+        },
+        {
+          "command": "codeCoach.explainWhyWorks",
           "when": "editorHasSelection && (editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust)",
           "group": "navigation@50"
         },
@@ -246,6 +271,34 @@
           "default": false,
           "description": "Require valid JSON-only responses from the model; otherwise fall back to static explanations."
         },
+        "codeCoach.privacy.mode": {
+          "type": "string",
+          "default": "offline",
+          "enum": [
+            "offline",
+            "local",
+            "redacted",
+            "full"
+          ],
+          "description": "Privacy mode for AI requests. Offline blocks AI; local restricts to localhost; redacted strips sensitive content; full sends raw context."
+        },
+        "codeCoach.privacy.allowedDomains": {
+          "type": "array",
+          "default": [],
+          "description": "Allowlist of domains for AI requests (empty = allow all)."
+        },
+        "codeCoach.privacy.redactPatterns": {
+          "type": "array",
+          "default": [],
+          "description": "Regex patterns to redact before sending to AI."
+        },
+        "codeCoach.privacy.maxContextChars": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 500,
+          "maximum": 50000,
+          "description": "Maximum number of characters sent to the LLM after redaction."
+        },
         "codeCoach.runtime.enabled": {
           "type": "boolean",
           "default": false,
@@ -272,6 +325,16 @@
           ],
           "default": "output",
           "description": "Where to display Explain Selection results."
+        },
+        "codeCoach.ui.explainWhyWorks": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel",
+            "peek"
+          ],
+          "default": "output",
+          "description": "Where to display Explain Why This Works results."
         },
         "codeCoach.ui.explainDiagnostic": {
           "type": "string",
@@ -326,7 +389,19 @@
         "codeCoach.deepDive.sections": {
           "type": "array",
           "default": [],
-          "description": "Limit Deep Dive sections to show (overview, usages, blame, tests, coverage). Empty means all."
+          "description": "Limit Deep Dive sections to show (overview, usages, blame, history, summary, tests, coverage). Empty means all."
+        },
+        "codeCoach.deepDive.aiSummary": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include AI summary in Deep Dive when AI is enabled."
+        },
+        "codeCoach.deepDive.historyLimit": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 30,
+          "description": "Maximum number of recent commits to show in Deep Dive history."
         },
         "codeCoach.coachMode.enabled": {
           "type": "boolean",

@@ -1,4 +1,4 @@
-import { AiExplainResult } from './aiClient';
+import { AiExplainResult } from './aiTypes';
 
 export type VerificationEvidence = {
   diagnosticCodes?: number[];

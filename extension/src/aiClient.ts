@@ -1,29 +1,10 @@
 import * as vscode from 'vscode';
 import { AiConfig, AiProvider, getAiApiKey, getAiConfig } from './aiSettings';
 import { buildOptimizedPrompt, PromptOptimizerMode } from './promptOptimizer';
+import { AiExplainInput, AiExplainResult } from './aiTypes';
+import { enforcePrivacyPolicy, getPrivacyConfig, sanitizeAiInput } from './privacy';
 
-export type AiExplainInput = {
-  kind: 'selection' | 'exception';
-  languageId: string;
-  code: string;
-  filePath?: string;
-  startLineNumber?: number;
-  endLineNumber?: number;
-  diagnostics?: Array<{ message: string; code?: string | number }>;
-  runtime?: {
-    stoppedAt?: string;
-    locals?: Array<{ name: string; value: string; type?: string }>;
-  };
-};
-
-export type AiExplainResult = {
-  explanationMarkdown: string;
-  claims?: {
-    diagnosticCodes?: number[];
-    localVariables?: string[];
-  };
-  confidence?: 'high' | 'medium' | 'low';
-};
+export type { AiExplainInput, AiExplainResult } from './aiTypes';
 
 let promptDebugChannel: vscode.OutputChannel | undefined;
 
@@ -37,15 +18,23 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
     throw new Error(`AI provider ${cfg.provider} is disabled by policy.`);
   }
 
+  const privacy = getPrivacyConfig();
+  const decision = enforcePrivacyPolicy(privacy, cfg.provider, cfg.baseUrl);
+  if (!decision.allowed) {
+    throw new Error(decision.reason ?? 'AI request blocked by privacy settings.');
+  }
+
   const apiKey = await getAiApiKey(context, cfg.provider);
   if (!apiKey && requiresApiKey(cfg.provider, cfg)) {
     throw new Error(`No API key stored for ${cfg.provider}. Run "Code Coach: Set AI API Key".`);
   }
 
+  const sanitizedInput = sanitizeAiInput(input, privacy);
+
   const url = joinUrl(cfg.baseUrl, resolveEndpointPath(cfg));
   const headers = buildHeaders(cfg, apiKey ?? '');
   const systemPrompt = buildSystemPrompt(cfg.responseStyle);
-  const userPrompt = buildUserPrompt(input, cfg.responseStyle);
+  const userPrompt = buildUserPrompt(sanitizedInput, cfg.responseStyle);
   const optimizedPrompt = cfg.promptOptimizer
     ? buildOptimizedPrompt(userPrompt, {
         includeDebugHeader: cfg.promptDebug,
@@ -272,9 +261,9 @@ type OptimizerPayload = {
 
 function buildUserPrompt(input: AiExplainInput, responseStyle: 'concise' | 'detailed'): OptimizerPayload {
   const lines: string[] = [];
-  const task = `Explain the ${input.kind} so a developer can understand what it does and why it fails (if applicable).`;
+  let task = `Explain the ${input.kind} so a developer can understand what it does and why it fails (if applicable).`;
   const audience = 'A developer reading code inside VS Code who wants fast, accurate understanding.';
-  const outputFormat =
+  let outputFormat =
     'Return JSON only (no markdown fences). explanationMarkdown: human-readable explanation. ' +
     'claims.diagnosticCodes: include only codes you explicitly used. ' +
     'claims.localVariables: include only runtime locals you explicitly used (omit if none provided). ' +
@@ -293,7 +282,28 @@ function buildUserPrompt(input: AiExplainInput, responseStyle: 'concise' | 'deta
     'Only cite lines that appear in the provided snippet.'
   ];
 
+  if (input.kind === 'deepDive') {
+    task = 'Summarize the symbol for a deep dive panel: intent, responsibilities, risks.';
+  }
+
+  if (input.kind === 'why') {
+    task = 'Explain why this code works: assumptions, edge cases, what could break.';
+    outputFormat =
+      'Return JSON only (no markdown fences). explanationMarkdown: include sections for Assumptions, ' +
+      'Edge cases handled, Edge cases not handled, and What could break. ' +
+      'claims.diagnosticCodes: include only codes you explicitly used. ' +
+      'claims.localVariables: include only runtime locals you explicitly used (omit if none provided). ' +
+      'confidence: high|medium|low based on evidence coverage.';
+    constraints.push('Be explicit about uncertainty; do not guess missing behaviors.');
+  }
+
   const evidence: string[] = [];
+  if (input.context && input.context.length > 0) {
+    evidence.push('Context:');
+    for (const line of input.context.slice(0, 20)) {
+      evidence.push(`- ${line}`);
+    }
+  }
   if (input.filePath) {
     evidence.push(`File: ${input.filePath}`);
   }

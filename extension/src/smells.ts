@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import ts from 'typescript';
 
 export type CodeSmell = {
-  type: 'performance' | 'maintainability' | 'correctness';
+  type: 'performance' | 'maintainability' | 'correctness' | 'security';
   severity: vscode.DiagnosticSeverity;
   code: string;
   message: string;
@@ -142,6 +142,60 @@ export function analyzeDocumentForSmells(document: vscode.TextDocument): CodeSme
           });
         }
       }
+
+      const calleeName = getCalleeName(expr);
+      if (calleeName) {
+        const lowered = calleeName.toLowerCase();
+        if (lowered === 'eval') {
+          const range = nodeRange(document, sourceFile, node);
+          smells.push({
+            type: 'security',
+            severity: vscode.DiagnosticSeverity.Warning,
+            code: 'unsafe-eval',
+            message: 'Use of eval can lead to code injection vulnerabilities.',
+            suggestion: 'Avoid eval; use safer parsing or whitelisted operations.',
+            range
+          });
+        }
+
+        if (isSqlCall(lowered) && node.arguments.length > 0 && isDynamicString(node.arguments[0])) {
+          const range = nodeRange(document, sourceFile, node);
+          smells.push({
+            type: 'security',
+            severity: vscode.DiagnosticSeverity.Warning,
+            code: 'sql-injection',
+            message: 'Possible SQL injection via dynamic query construction.',
+            suggestion: 'Use parameterized queries instead of string concatenation.',
+            range
+          });
+        }
+
+        if (isCommandExec(lowered) && node.arguments.length > 0 && isDynamicString(node.arguments[0])) {
+          const range = nodeRange(document, sourceFile, node);
+          smells.push({
+            type: 'security',
+            severity: vscode.DiagnosticSeverity.Warning,
+            code: 'command-injection',
+            message: 'Possible command injection via dynamic command string.',
+            suggestion: 'Use spawn with args array or validate/escape inputs.',
+            range
+          });
+        }
+      }
+    }
+
+    if (ts.isNewExpression(node)) {
+      if (ts.isIdentifier(node.expression) && node.expression.text === 'Function') {
+        const range = nodeRange(document, sourceFile, node);
+        smells.push({
+          type: 'security',
+          severity: vscode.DiagnosticSeverity.Warning,
+          code: 'unsafe-eval',
+          message: 'Dynamic Function constructor can lead to code injection.',
+          suggestion: 'Avoid Function constructor; use safer alternatives.',
+          range
+        });
+      }
     }
 
     if (ts.isBinaryExpression(node)) {
@@ -268,6 +322,34 @@ function isNestingNode(node: ts.Node): boolean {
     isLoop(node) ||
     ts.isSwitchStatement(node) ||
     ts.isTryStatement(node)
+  );
+}
+
+function getCalleeName(expr: ts.Expression): string | undefined {
+  if (ts.isIdentifier(expr)) return expr.text;
+  if (ts.isPropertyAccessExpression(expr)) return expr.name.text;
+  return undefined;
+}
+
+function isDynamicString(expr: ts.Expression): boolean {
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return false;
+  if (ts.isTemplateExpression(expr)) return true;
+  if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.PlusToken) return true;
+  return false;
+}
+
+function isSqlCall(name: string): boolean {
+  return name === 'query' || name === 'execute' || name === 'run';
+}
+
+function isCommandExec(name: string): boolean {
+  return (
+    name === 'exec' ||
+    name === 'execsync' ||
+    name === 'spawn' ||
+    name === 'spawnsync' ||
+    name === 'execfile' ||
+    name === 'execfilesync'
   );
 }
 
