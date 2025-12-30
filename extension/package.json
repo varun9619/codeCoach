@@ -264,6 +264,11 @@
           "minimum": 5,
           "maximum": 200,
           "description": "Maximum number of Coach Mode hints per file."
+        },
+        "codeCoach.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable local telemetry logging to the Code Coach Telemetry output channel."
         }
       }
     },

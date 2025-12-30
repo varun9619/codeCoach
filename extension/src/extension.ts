@@ -12,6 +12,8 @@ import { SmellCodeActionProvider, SmellCodeLensProvider, toSmellDiagnostic } fro
 import { DiagnosticFixCodeActionProvider } from './diagnosticFixes';
 import { TestGapCodeActionProvider, TestGapCodeLensProvider } from './testGapProviders';
 import { CoachModeInlayProvider } from './coachMode';
+import { getDocumentSymbols, getReferences, invalidateDocumentCache } from './analysisCache';
+import { initTelemetry, trackEvent } from './telemetry';
 import {
   BranchSummary,
   TestGap,
@@ -35,6 +37,7 @@ let coachModeProvider: CoachModeInlayProvider | undefined;
 let peekProvider: PeekContentProvider | undefined;
 let peekLinkProvider: PeekCitationLinkProvider | undefined;
 const panels = new Map<string, vscode.WebviewPanel>();
+let refreshTimer: NodeJS.Timeout | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
   // Early console log for debugging - appears in Debug Console
@@ -50,6 +53,7 @@ export function activate(context: vscode.ExtensionContext) {
     coachModeProvider = new CoachModeInlayProvider();
     peekProvider = new PeekContentProvider();
     peekLinkProvider = new PeekCitationLinkProvider();
+    initTelemetry(context);
 
     // Startup logging for debugging
     outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -157,6 +161,12 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       presentResult('Code Coach: Explain Selection', 'codeCoach.ui.explainSelection', explanation);
+      trackEvent('feature_used', {
+        feature: 'explain_selection',
+        mode: modeLabel,
+        surface: getUiSurface('codeCoach.ui.explainSelection'),
+        lines: selection.end.line - selection.start.line + 1
+      });
     }),
 
     vscode.commands.registerCommand('codeCoach.explainDiagnostic', async () => {
@@ -177,6 +187,11 @@ export function activate(context: vscode.ExtensionContext) {
 
       const msg = explainDiagnostic(diag, editor.document.languageId);
       presentResult('Code Coach: Explain Diagnostic', 'codeCoach.ui.explainDiagnostic', msg);
+      trackEvent('feature_used', {
+        feature: 'explain_diagnostic',
+        surface: getUiSurface('codeCoach.ui.explainDiagnostic'),
+        code: typeof diag.code === 'number' ? diag.code : undefined
+      });
     }),
 
     vscode.commands.registerCommand('codeCoach.explainDiagnosticAt', async (uri?: vscode.Uri, position?: vscode.Position) => {
@@ -214,6 +229,13 @@ export function activate(context: vscode.ExtensionContext) {
         const report = renderDiagnosticOriginReport(data);
         presentResult('Code Coach: Trace Diagnostic Origin', 'codeCoach.ui.traceDiagnosticOrigin', report);
       }
+      trackEvent('feature_used', {
+        feature: 'trace_origin',
+        surface,
+        refs: data.references.length,
+        callers: data.callGraph?.edges.length ?? 0,
+        confidence: data.callGraph?.confidence
+      });
     }),
 
     vscode.commands.registerCommand('codeCoach.showSmells', async (scope?: vscode.Range) => {
@@ -242,6 +264,11 @@ export function activate(context: vscode.ExtensionContext) {
 
       const report = formatSmellReport(editor.document, reportSmells);
       presentResult('Code Coach: Code Smells', 'codeCoach.ui.codeSmells', report);
+      trackEvent('feature_used', {
+        feature: 'code_smells',
+        surface: getUiSurface('codeCoach.ui.codeSmells'),
+        count: reportSmells.length
+      });
     }),
 
     vscode.commands.registerCommand('codeCoach.showTestGaps', async (scope?: vscode.Range) => {
@@ -294,6 +321,12 @@ export function activate(context: vscode.ExtensionContext) {
 
       const report = formatTestGapReport(editor.document, summaryScope, scopedGaps, scope, coverage.source, symbolLabel);
       presentResult('Code Coach: Test Gaps', 'codeCoach.ui.testGaps', report);
+      trackEvent('feature_used', {
+        feature: 'test_gaps',
+        surface: getUiSurface('codeCoach.ui.testGaps'),
+        branches: summaryScope.totalBranches,
+        uncovered: summaryScope.totalBranches - summaryScope.coveredBranches
+      });
     }),
 
     vscode.commands.registerCommand('codeCoach.deepDive', async () => {
@@ -319,6 +352,13 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         vscode.window.showInformationMessage(`Deep Dive ready for ${data.overview.name}.`);
+        trackEvent('feature_used', {
+          feature: 'deep_dive',
+          usages: data.usages.length,
+          blame: data.blame.length,
+          tests: data.tests.length,
+          coverage: Boolean(data.coverage)
+        });
       } catch (err: any) {
         const message = err instanceof Error ? err.message : String(err);
         outputChannel?.appendLine(`Deep Dive failed: ${message}`);
@@ -373,6 +413,11 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       presentResult('Code Coach: Explain Last Exception', 'codeCoach.ui.runtimeException', explanation);
+      trackEvent('feature_used', {
+        feature: 'runtime_exception',
+        mode: modeLabel,
+        surface: getUiSurface('codeCoach.ui.runtimeException')
+      });
     }),
 
     vscode.commands.registerCommand('codeCoach.ai.setApiKey', async () => {
@@ -395,6 +440,7 @@ export function activate(context: vscode.ExtensionContext) {
       await setAiApiKey(context, provider, apiKey.trim());
       await vscode.workspace.getConfiguration('codeCoach').update('ai.provider', provider, vscode.ConfigurationTarget.Global);
       vscode.window.showInformationMessage(`Code Coach AI API key saved for ${provider}.`);
+      trackEvent('feature_used', { feature: 'ai_key_set', provider });
     }),
 
     vscode.commands.registerCommand('codeCoach.ai.clearApiKey', async () => {
@@ -409,6 +455,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (choice !== 'Remove') return;
       await clearAiApiKey(context, provider);
       vscode.window.showInformationMessage(`Code Coach AI API key removed for ${provider}.`);
+      trackEvent('feature_used', { feature: 'ai_key_clear', provider });
     }),
 
     vscode.commands.registerCommand('codeCoach.generateTestStub', async (uri?: vscode.Uri, line?: number, branch?: number) => {
@@ -440,6 +487,7 @@ export function activate(context: vscode.ExtensionContext) {
       const content = `// Test stub for ${rel}:${line}\n// ${scopeLabel}\n// Condition: ${condition}\n${suggestion}\n\ndescribe('${enclosing?.name ?? 'branch coverage'}', () => {\n  it('covers branch at ${rel}:${line}', () => {\n    // Arrange\n    // Act\n    // Assert\n    expect(true).toBe(true);\n  });\n});\n`;
       const stubDoc = await vscode.workspace.openTextDocument({ language, content });
       await vscode.window.showTextDocument(stubDoc, { preview: false });
+      trackEvent('feature_used', { feature: 'test_stub', branch });
     })
   );
 
@@ -526,16 +574,15 @@ export function activate(context: vscode.ExtensionContext) {
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
     ),
     vscode.workspace.onDidChangeTextDocument(event => {
-      const lang = event.document.languageId;
-      if (lang.startsWith('javascript') || lang.startsWith('typescript')) {
-        smellCodeLensProvider?.refresh();
-        testGapCodeLensProvider?.refresh();
-        coachModeProvider?.refresh();
-      }
+      invalidateDocumentCache(event.document.uri);
+      scheduleFeatureRefresh(event.document.languageId);
     }),
     vscode.workspace.onDidChangeConfiguration(event => {
       if (event.affectsConfiguration('codeCoach.coachMode')) {
         coachModeProvider?.refresh();
+        trackEvent('coach_mode_toggle', {
+          enabled: vscode.workspace.getConfiguration('codeCoach').get<boolean>('coachMode.enabled', false)
+        });
       }
     })
   );
@@ -577,12 +624,20 @@ function parseRuntimeReport(report: string): { stoppedAt?: string; locals?: Arra
   return { stoppedAt, locals };
 }
 
+function scheduleFeatureRefresh(languageId?: string): void {
+  if (!languageId || (!languageId.startsWith('javascript') && !languageId.startsWith('typescript'))) return;
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    smellCodeLensProvider?.refresh();
+    testGapCodeLensProvider?.refresh();
+    coachModeProvider?.refresh();
+    refreshTimer = undefined;
+  }, 200);
+}
+
 async function buildRelatedSection(document: vscode.TextDocument, selection: vscode.Selection): Promise<string | undefined> {
   try {
-    const symbols = (await vscode.commands.executeCommand(
-      'vscode.executeDocumentSymbolProvider',
-      document.uri
-    )) as vscode.DocumentSymbol[] | undefined;
+    const symbols = await getDocumentSymbols(document);
     if (!symbols || symbols.length === 0) return undefined;
 
     const enclosing = findEnclosingSymbol(symbols, selection.active);
@@ -598,11 +653,7 @@ async function buildRelatedSection(document: vscode.TextDocument, selection: vsc
     }
 
     const refPos = enclosing.selectionRange.start;
-    const refs = (await vscode.commands.executeCommand(
-      'vscode.executeReferenceProvider',
-      document.uri,
-      refPos
-    )) as vscode.Location[] | undefined;
+    const refs = await getReferences(document, refPos);
 
     const out: string[] = [];
     out.push('Related:');
@@ -793,6 +844,27 @@ type TraceOriginData = {
   };
   references: Array<{ label: string; uri: string; line: number }>;
   notes: string[];
+  callGraph?: TraceCallGraph;
+};
+
+type CallGraphNode = {
+  id: string;
+  label: string;
+  uri: string;
+  line: number;
+  kind?: vscode.SymbolKind;
+};
+
+type CallGraphEdge = {
+  from: string;
+  to: string;
+};
+
+type TraceCallGraph = {
+  nodes: CallGraphNode[];
+  edges: CallGraphEdge[];
+  rootId: string;
+  confidence: 'low' | 'medium' | 'high';
 };
 
 function presentResult(title: string, settingKey: string, content: string): void {
@@ -1118,10 +1190,7 @@ async function buildDiagnosticOriginData(
     notes: []
   };
 
-  const symbols = (await vscode.commands.executeCommand(
-    'vscode.executeDocumentSymbolProvider',
-    document.uri
-  )) as vscode.DocumentSymbol[] | undefined;
+  const symbols = await getDocumentSymbols(document);
 
   if (!symbols || symbols.length === 0) {
     data.notes.push('No symbols were found in this file, so the trace is limited to the diagnostic location.');
@@ -1142,11 +1211,7 @@ async function buildDiagnosticOriginData(
     line: enclosing.selectionRange.start.line + 1
   };
 
-  const refs = (await vscode.commands.executeCommand(
-    'vscode.executeReferenceProvider',
-    document.uri,
-    enclosing.selectionRange.start
-  )) as vscode.Location[] | undefined;
+  const refs = await getReferences(document, enclosing.selectionRange.start);
 
   const refList = (refs ?? []).filter(
     ref => !(ref.uri.fsPath === document.uri.fsPath && ref.range.start.line === enclosing.selectionRange.start.line)
@@ -1154,6 +1219,7 @@ async function buildDiagnosticOriginData(
 
   if (refList.length === 0) {
     data.notes.push('No references found for the enclosing symbol. It may be unused or dynamically invoked.');
+    data.callGraph = await buildCallGraph(document, enclosing, []);
     return data;
   }
 
@@ -1162,6 +1228,8 @@ async function buildDiagnosticOriginData(
     uri: ref.uri.fsPath,
     line: ref.range.start.line + 1
   }));
+
+  data.callGraph = await buildCallGraph(document, enclosing, refList.slice(0, 20));
 
   return data;
 }
@@ -1186,6 +1254,22 @@ function renderDiagnosticOriginReport(data: TraceOriginData): string {
     out.push('Possible callers / references (sample):');
     for (const ref of data.references) {
       out.push(`- ${ref.label}`);
+    }
+  }
+
+  if (data.callGraph) {
+    out.push('');
+    out.push(`Call graph (static, confidence: ${data.callGraph.confidence}):`);
+    if (data.callGraph.edges.length === 0) {
+      out.push('- No callers resolved for this symbol.');
+    } else {
+      const nodeById = new Map(data.callGraph.nodes.map(node => [node.id, node]));
+      for (const edge of data.callGraph.edges) {
+        const from = nodeById.get(edge.from);
+        const to = nodeById.get(edge.to);
+        if (!from || !to) continue;
+        out.push(`- ${from.label} → ${to.label}`);
+      }
     }
   }
 
@@ -1244,6 +1328,8 @@ function buildTraceOriginHtml(data: TraceOriginData): string {
       ? `<ul>${data.notes.map(note => `<li>${escapeHtml(note)}</li>`).join('')}</ul>`
       : '<span class="muted">None</span>';
 
+  const graphHtml = renderCallGraphHtml(data.callGraph);
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -1301,6 +1387,29 @@ function buildTraceOriginHtml(data: TraceOriginData): string {
       font-family: var(--vscode-editor-font-family);
       white-space: pre-wrap;
     }
+    .graph-meta {
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+      margin-bottom: 8px;
+    }
+    .graph-edge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .graph-node {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 6px;
+      padding: 2px 8px;
+      cursor: pointer;
+      font: inherit;
+    }
+    .graph-node.root {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+    }
   </style>
 </head>
 <body>
@@ -1327,6 +1436,10 @@ function buildTraceOriginHtml(data: TraceOriginData): string {
     <ul>${referencesHtml}</ul>
   </section>
   <section>
+    <div class="label">Call Graph (static)</div>
+    ${graphHtml}
+  </section>
+  <section>
     <div class="label">Notes</div>
     ${notesHtml}
   </section>
@@ -1343,4 +1456,106 @@ function buildTraceOriginHtml(data: TraceOriginData): string {
   </script>
 </body>
 </html>`;
+}
+
+function renderCallGraphHtml(callGraph?: TraceCallGraph): string {
+  if (!callGraph) {
+    return '<span class="muted">Not available</span>';
+  }
+
+  const nodeById = new Map(callGraph.nodes.map(node => [node.id, node]));
+  const edges = callGraph.edges;
+  const confidenceLabel = callGraph.confidence.toUpperCase();
+
+  if (edges.length === 0) {
+    const root = nodeById.get(callGraph.rootId);
+    if (!root) return '<span class="muted">No callers resolved</span>';
+    return `<div class="graph-meta">Confidence: ${confidenceLabel}</div>
+<div class="graph-edge">
+  <button class="graph-node root" data-uri="${encodeURIComponent(root.uri)}" data-line="${root.line}">
+    ${escapeHtml(root.label)}
+  </button>
+  <span class="muted">No callers resolved</span>
+</div>`;
+  }
+
+  const edgeHtml = edges
+    .map(edge => {
+      const from = nodeById.get(edge.from);
+      const to = nodeById.get(edge.to);
+      if (!from || !to) return '';
+      return `<li class="graph-edge">
+  <button class="graph-node" data-uri="${encodeURIComponent(from.uri)}" data-line="${from.line}">
+    ${escapeHtml(from.label)}
+  </button>
+  <span>→</span>
+  <button class="graph-node root" data-uri="${encodeURIComponent(to.uri)}" data-line="${to.line}">
+    ${escapeHtml(to.label)}
+  </button>
+</li>`;
+    })
+    .join('');
+
+  return `<div class="graph-meta">Confidence: ${confidenceLabel}</div>
+<ul>${edgeHtml}</ul>`;
+}
+
+async function buildCallGraph(
+  document: vscode.TextDocument,
+  enclosing: vscode.DocumentSymbol,
+  references: vscode.Location[]
+): Promise<TraceCallGraph> {
+  const nodes = new Map<string, CallGraphNode>();
+  const edges: CallGraphEdge[] = [];
+  const rootId = makeCallGraphNodeId(document.uri.fsPath, enclosing.range.start.line, enclosing.name);
+  nodes.set(rootId, {
+    id: rootId,
+    label: `${enclosing.name} (${symbolKindLabel(enclosing.kind)})`,
+    uri: document.uri.fsPath,
+    line: enclosing.range.start.line + 1,
+    kind: enclosing.kind
+  });
+
+  let resolvedCallers = 0;
+  for (const ref of references) {
+    if (edges.length >= 20) break;
+    try {
+      const refDoc = await vscode.workspace.openTextDocument(ref.uri);
+      const symbols = await getDocumentSymbols(refDoc);
+      if (!symbols) continue;
+      const caller = findEnclosingSymbol(symbols, ref.range.start);
+      if (!caller) continue;
+      const callerId = makeCallGraphNodeId(ref.uri.fsPath, caller.selectionRange.start.line, caller.name);
+      if (!nodes.has(callerId)) {
+        nodes.set(callerId, {
+          id: callerId,
+          label: `${caller.name} (${symbolKindLabel(caller.kind)})`,
+          uri: ref.uri.fsPath,
+          line: caller.selectionRange.start.line + 1,
+          kind: caller.kind
+        });
+      }
+      edges.push({ from: callerId, to: rootId });
+      resolvedCallers += 1;
+    } catch {
+      continue;
+    }
+  }
+
+  return {
+    nodes: Array.from(nodes.values()),
+    edges,
+    rootId,
+    confidence: confidenceForCallGraph(resolvedCallers)
+  };
+}
+
+function makeCallGraphNodeId(filePath: string, line: number, name: string): string {
+  return `${filePath}:${line}:${name}`;
+}
+
+function confidenceForCallGraph(callers: number): 'low' | 'medium' | 'high' {
+  if (callers === 0) return 'low';
+  if (callers < 3) return 'medium';
+  return 'high';
 }

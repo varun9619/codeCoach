@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as path from 'node:path';
+import { getDocumentSymbols, getReferences } from './analysisCache';
 
 const execFileAsync = promisify(execFile);
 
@@ -202,21 +203,14 @@ export async function buildDeepDiveData(
   document: vscode.TextDocument,
   position: vscode.Position
 ): Promise<DeepDiveData | undefined> {
-  const symbols = (await vscode.commands.executeCommand(
-    'vscode.executeDocumentSymbolProvider',
-    document.uri
-  )) as vscode.DocumentSymbol[] | undefined;
+  const symbols = await getDocumentSymbols(document);
 
   if (!symbols || symbols.length === 0) return undefined;
 
   const enclosing = findEnclosingSymbol(symbols, position);
   if (!enclosing) return undefined;
 
-  const refs = (await vscode.commands.executeCommand(
-    'vscode.executeReferenceProvider',
-    document.uri,
-    enclosing.selectionRange.start
-  )) as vscode.Location[] | undefined;
+  const refs = await getReferences(document, enclosing.selectionRange.start);
 
   const usages = (refs ?? []).filter(
     ref => !(ref.uri.fsPath === document.uri.fsPath && ref.range.start.line === enclosing.selectionRange.start.line)

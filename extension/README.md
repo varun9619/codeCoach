@@ -43,6 +43,8 @@ Settings:
 - Coach Mode:
   - `codeCoach.coachMode.enabled`
   - `codeCoach.coachMode.maxHints`
+- Telemetry (local only):
+  - `codeCoach.telemetry.enabled`
 
 AI citation behavior:
 - AI explanations are asked to include line citations (e.g., `src/file.ts:42` or `L42`).
