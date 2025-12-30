@@ -29,6 +29,7 @@ let deepDiveProvider: DeepDiveProvider | undefined;
 let deepDiveView: vscode.TreeView<any> | undefined;
 let smellCodeLensProvider: SmellCodeLensProvider | undefined;
 let testGapCodeLensProvider: TestGapCodeLensProvider | undefined;
+let peekProvider: PeekContentProvider | undefined;
 const panels = new Map<string, vscode.WebviewPanel>();
 
 export function activate(context: vscode.ExtensionContext) {
@@ -42,6 +43,7 @@ export function activate(context: vscode.ExtensionContext) {
     deepDiveProvider = new DeepDiveProvider();
     smellCodeLensProvider = new SmellCodeLensProvider();
     testGapCodeLensProvider = new TestGapCodeLensProvider();
+    peekProvider = new PeekContentProvider();
 
     // Startup logging for debugging
     outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -73,6 +75,7 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel,
     smellDiagnostics,
     testGapDiagnostics,
+    vscode.workspace.registerTextDocumentContentProvider('codecoach', peekProvider),
     (deepDiveView = vscode.window.createTreeView('codeCoach.deepDive', { treeDataProvider: deepDiveProvider })),
     vscode.commands.registerCommand('codeCoach.explainSelection', async () => {
       const editor = vscode.window.activeTextEditor;
@@ -701,6 +704,7 @@ export function deactivate() {
   deepDiveView = undefined;
   smellCodeLensProvider = undefined;
   testGapCodeLensProvider = undefined;
+  peekProvider = undefined;
   for (const panel of panels.values()) {
     panel.dispose();
   }
@@ -724,7 +728,7 @@ async function pickAiProvider(): Promise<AiProvider | undefined> {
   return picked?.provider;
 }
 
-type UiSurface = 'output' | 'panel';
+type UiSurface = 'output' | 'panel' | 'peek';
 
 type TraceOriginData = {
   diagnostic: {
@@ -751,6 +755,10 @@ function presentResult(title: string, settingKey: string, content: string): void
     showInPanel(settingKey, title, content);
     return;
   }
+  if (surface === 'peek') {
+    showInPeek(title, content);
+    return;
+  }
 
   outputChannel?.clear();
   outputChannel?.appendLine(content);
@@ -759,7 +767,8 @@ function presentResult(title: string, settingKey: string, content: string): void
 
 function getUiSurface(settingKey: string): UiSurface {
   const raw = vscode.workspace.getConfiguration().get<string>(settingKey, 'output');
-  return raw === 'panel' ? 'panel' : 'output';
+  if (raw === 'panel' || raw === 'peek') return raw;
+  return 'output';
 }
 
 function showInPanel(viewType: string, title: string, content: string): void {
@@ -790,6 +799,31 @@ function showInPanel(viewType: string, title: string, content: string): void {
   }
 
   panel.webview.html = buildPanelHtml(title, content);
+}
+
+function showInPeek(_title: string, content: string): void {
+  if (!peekProvider) {
+    outputChannel?.appendLine(content);
+    outputChannel?.show(true);
+    return;
+  }
+
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    outputChannel?.appendLine(content);
+    outputChannel?.show(true);
+    return;
+  }
+
+  const uri = peekProvider.createDocument(content);
+  const location = new vscode.Location(uri, new vscode.Position(0, 0));
+  void vscode.commands.executeCommand(
+    'editor.action.peekLocations',
+    editor.document.uri,
+    editor.selection.active,
+    [location],
+    'peek'
+  );
 }
 
 function buildPanelHtml(title: string, content: string): string {
@@ -905,6 +939,38 @@ function resolveCitationPath(filePart: string): string | undefined {
   }
 
   return undefined;
+}
+
+class PeekContentProvider implements vscode.TextDocumentContentProvider {
+  private readonly emitter = new vscode.EventEmitter<vscode.Uri>();
+  readonly onDidChange = this.emitter.event;
+  private readonly contents = new Map<string, string>();
+  private readonly order: string[] = [];
+  private counter = 0;
+  private readonly maxEntries = 30;
+
+  provideTextDocumentContent(uri: vscode.Uri): string {
+    return this.contents.get(uri.toString()) ?? '';
+  }
+
+  createDocument(content: string): vscode.Uri {
+    const id = `${Date.now()}-${this.counter++}`;
+    const uri = vscode.Uri.from({ scheme: 'codecoach', path: `/peek-${id}.txt` });
+    const key = uri.toString();
+    this.contents.set(key, content);
+    this.order.push(key);
+    this.trim();
+    this.emitter.fire(uri);
+    return uri;
+  }
+
+  private trim(): void {
+    while (this.order.length > this.maxEntries) {
+      const key = this.order.shift();
+      if (!key) return;
+      this.contents.delete(key);
+    }
+  }
 }
 
 async function buildDiagnosticOriginData(

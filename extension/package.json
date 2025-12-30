@@ -197,7 +197,8 @@
           "type": "string",
           "enum": [
             "output",
-            "panel"
+            "panel",
+            "peek"
           ],
           "default": "output",
           "description": "Where to display Explain Selection results."
@@ -206,7 +207,8 @@
           "type": "string",
           "enum": [
             "output",
-            "panel"
+            "panel",
+            "peek"
           ],
           "default": "output",
           "description": "Where to display Explain Diagnostic command results."
@@ -215,7 +217,8 @@
           "type": "string",
           "enum": [
             "output",
-            "panel"
+            "panel",
+            "peek"
           ],
           "default": "output",
           "description": "Where to display Trace Diagnostic Origin results."
@@ -224,7 +227,8 @@
           "type": "string",
           "enum": [
             "output",
-            "panel"
+            "panel",
+            "peek"
           ],
           "default": "output",
           "description": "Where to display Explain Last Exception results."
@@ -233,7 +237,8 @@
           "type": "string",
           "enum": [
             "output",
-            "panel"
+            "panel",
+            "peek"
           ],
           "default": "output",
           "description": "Where to display Code Smells reports."
@@ -242,7 +247,8 @@
           "type": "string",
           "enum": [
             "output",
-            "panel"
+            "panel",
+            "peek"
           ],
           "default": "output",
           "description": "Where to display Test Gap reports."
