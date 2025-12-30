@@ -1,10 +1,14 @@
 import * as vscode from 'vscode';
 import { AiConfig, AiProvider, getAiApiKey, getAiConfig } from './aiSettings';
+import { buildOptimizedPrompt } from './promptOptimizer';
 
 export type AiExplainInput = {
   kind: 'selection' | 'exception';
   languageId: string;
   code: string;
+  filePath?: string;
+  startLineNumber?: number;
+  endLineNumber?: number;
   diagnostics?: Array<{ message: string; code?: string | number }>;
   runtime?: {
     stoppedAt?: string;
@@ -21,6 +25,8 @@ export type AiExplainResult = {
   confidence?: 'high' | 'medium' | 'low';
 };
 
+let promptDebugChannel: vscode.OutputChannel | undefined;
+
 export async function aiExplain(context: vscode.ExtensionContext, input: AiExplainInput): Promise<AiExplainResult> {
   const cfg = getAiConfig();
   if (!cfg.enabled) throw new Error('AI is disabled (codeCoach.ai.enabled=false).');
@@ -35,13 +41,23 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
   const headers = buildHeaders(cfg, apiKey);
   const systemPrompt = buildSystemPrompt(cfg.responseStyle);
   const userPrompt = buildUserPrompt(input, cfg.responseStyle);
+  const optimizedPrompt = cfg.promptOptimizer
+    ? buildOptimizedPrompt(userPrompt, { includeDebugHeader: cfg.promptDebug })
+    : buildOptimizedPrompt(userPrompt);
+
+  if (cfg.promptDebug) {
+    const channel = getPromptDebugChannel();
+    channel.clear();
+    channel.appendLine(optimizedPrompt);
+    channel.show(true);
+  }
 
   const body = buildProviderBody(cfg.provider, {
     model: cfg.model,
     temperature: cfg.temperature,
     maxTokens: cfg.maxTokens,
     systemPrompt,
-    userPrompt
+    userPrompt: optimizedPrompt
   });
 
   const res = await fetch(url, {
@@ -65,6 +81,10 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
   // Try hard to extract/parse JSON; if we can't, treat the content as plain markdown.
   const parsed = tryParseAiExplainResultFromText(content);
   if (parsed) return parsed;
+
+  if (cfg.strictJson) {
+    throw new Error('AI response was not valid JSON, and strict JSON mode is enabled.');
+  }
 
   return {
     explanationMarkdown: content.trim(),
@@ -170,6 +190,13 @@ function buildSystemPrompt(responseStyle: 'concise' | 'detailed'): string {
   );
 }
 
+function getPromptDebugChannel(): vscode.OutputChannel {
+  if (!promptDebugChannel) {
+    promptDebugChannel = vscode.window.createOutputChannel('Code Coach: Prompt Debug');
+  }
+  return promptDebugChannel;
+}
+
 function tryParseAiExplainResultFromText(text: string): AiExplainResult | undefined {
   const trimmed = text.trim();
 
@@ -206,54 +233,96 @@ function tryParseJsonObject(candidate: string): AiExplainResult | undefined {
   }
 }
 
-function buildUserPrompt(input: AiExplainInput, responseStyle: 'concise' | 'detailed'): string {
+type OptimizerPayload = {
+  task: string;
+  audience: string;
+  outputFormat: string;
+  style: string[];
+  constraints: string[];
+  evidence: string[];
+  codeBlock?: string;
+};
+
+function buildUserPrompt(input: AiExplainInput, responseStyle: 'concise' | 'detailed'): OptimizerPayload {
   const lines: string[] = [];
-  lines.push(`Task: Explain ${input.kind} in plain English.`);
-  lines.push(`Output style: ${responseStyle === 'detailed' ? 'detailed paragraphs' : 'concise bullets'}.`);
-  lines.push('Constraints:');
-  lines.push('- Be specific, but do not invent runtime values.');
-  lines.push('- If you are unsure, say what evidence is missing.');
-  if (responseStyle === 'detailed') {
-    lines.push('- Prefer 1–2 paragraphs; you may add a short bullet list at the end.');
-  } else {
-    lines.push('- Keep it concise; prefer bullets.');
+  const task = `Explain the ${input.kind} so a developer can understand what it does and why it fails (if applicable).`;
+  const audience = 'A developer reading code inside VS Code who wants fast, accurate understanding.';
+  const outputFormat =
+    'Return JSON only (no markdown fences). explanationMarkdown: human-readable explanation. ' +
+    'claims.diagnosticCodes: include only codes you explicitly used. ' +
+    'claims.localVariables: include only runtime locals you explicitly used (omit if none provided). ' +
+    'confidence: high|medium|low based on evidence coverage.';
+  const style = [
+    responseStyle === 'detailed'
+      ? '1–2 short paragraphs; optional 2–4 bullets.'
+      : 'Concise bullets (3–8).',
+    'Tone: professional, direct, no fluff.'
+  ];
+  const constraints = [
+    'Use only the evidence provided below.',
+    'Do not invent runtime values or missing files.',
+    'If unsure, state what evidence is missing.',
+    'Include line citations for any code claim.',
+    'Only cite lines that appear in the provided snippet.'
+  ];
+
+  const evidence: string[] = [];
+  if (input.filePath) {
+    evidence.push(`File: ${input.filePath}`);
   }
-  lines.push('');
+  if (typeof input.startLineNumber === 'number' && typeof input.endLineNumber === 'number') {
+    evidence.push(`Line range: ${input.startLineNumber}-${input.endLineNumber}`);
+  }
+  if (input.filePath || typeof input.startLineNumber === 'number') {
+    evidence.push('Citation format: "path:line" (preferred) or "L<line>" if no file path provided.');
+  }
 
   if (input.diagnostics && input.diagnostics.length > 0) {
-    lines.push('Diagnostics (facts from editor):');
+    evidence.push('Diagnostics (facts from editor):');
     for (const d of input.diagnostics.slice(0, 10)) {
       const c = d.code !== undefined ? ` (code ${String(d.code)})` : '';
-      lines.push(`- ${d.message}${c}`);
+      evidence.push(`- ${d.message}${c}`);
     }
-    lines.push('');
   }
 
   if (input.runtime) {
-    if (input.runtime.stoppedAt) lines.push(`Runtime stop location: ${input.runtime.stoppedAt}`);
+    if (input.runtime.stoppedAt) evidence.push(`Runtime stop location: ${input.runtime.stoppedAt}`);
     if (input.runtime.locals && input.runtime.locals.length > 0) {
-      lines.push('Runtime locals (facts):');
+      evidence.push('Runtime locals (facts):');
       for (const v of input.runtime.locals.slice(0, 30)) {
         const typeSuffix = v.type ? `: ${v.type}` : '';
-        lines.push(`- ${v.name}${typeSuffix} = ${v.value}`);
+        evidence.push(`- ${v.name}${typeSuffix} = ${v.value}`);
       }
-      lines.push('');
     }
   }
 
-  lines.push(`Language: ${input.languageId}`);
-  lines.push('Code:');
-  lines.push('```');
-  lines.push(input.code);
-  lines.push('```');
+  evidence.push(`Language: ${input.languageId}`);
 
-  lines.push('');
-  lines.push('Required output JSON rules:');
-  lines.push('- explanationMarkdown: markdown string for the user');
-  lines.push('- claims.diagnosticCodes: include ONLY numeric codes you relied on (if any)');
-  lines.push('- claims.localVariables: include ONLY variable names you relied on from runtime locals (if any)');
+  const codeBlock = formatCodeWithLineNumbers(input.code, input.startLineNumber);
 
-  return lines.join('\n');
+  return {
+    task,
+    audience,
+    outputFormat,
+    style,
+    constraints,
+    evidence,
+    codeBlock
+  };
+}
+
+function formatCodeWithLineNumbers(code: string, startLineNumber?: number): string {
+  const normalized = code.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  if (typeof startLineNumber !== 'number') {
+    return lines.join('\n');
+  }
+  return lines
+    .map((line, idx) => {
+      const lineNumber = startLineNumber + idx;
+      return `L${lineNumber}: ${line}`;
+    })
+    .join('\n');
 }
 
 function joinUrl(baseUrl: string, path: string): string {

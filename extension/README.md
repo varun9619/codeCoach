@@ -35,6 +35,17 @@ Settings:
   - `codeCoach.ui.codeSmells`
   (values: `output` or `panel`)
 
+AI citation behavior:
+- AI explanations are asked to include line citations (e.g., `src/file.ts:42` or `L42`).
+- For selections, citations are verified to be within the selected line range. Verification notes appear if mismatched.
+
+Prompt optimizer layer:
+- User inputs are automatically structured into an "objective / constraints / evidence / output" format before hitting the LLM.
+- This improves consistency across providers and makes outputs easier to verify.
+- `codeCoach.ai.promptOptimizer` toggles the optimizer layer.
+- `codeCoach.ai.promptDebug` shows the optimized prompt in a separate output channel.
+- `codeCoach.ai.strictJson` requires JSON-only responses; otherwise AI falls back to static explanations.
+
 ## Usage
 
 - Select code → Command Palette → **Code Coach: Explain Selection**

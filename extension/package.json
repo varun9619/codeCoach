@@ -153,6 +153,21 @@
           "default": "",
           "description": "Optional X-Title header for OpenRouter requests."
         },
+        "codeCoach.ai.promptOptimizer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the prompt optimizer layer for more consistent LLM outputs."
+        },
+        "codeCoach.ai.promptDebug": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, print the optimized prompt to the Code Coach output channel."
+        },
+        "codeCoach.ai.strictJson": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require valid JSON-only responses from the model; otherwise fall back to static explanations."
+        },
         "codeCoach.runtime.enabled": {
           "type": "boolean",
           "default": false,

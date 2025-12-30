@@ -17,6 +17,9 @@ export type AiConfig = {
   extraHeaders: Record<string, string>;
   temperature: number;
   maxTokens: number;
+  promptOptimizer: boolean;
+  promptDebug: boolean;
+  strictJson: boolean;
 };
 
 type ProviderDefaults = {
@@ -102,7 +105,10 @@ export function getAiConfig(): AiConfig {
     authScheme: (config.get<string>('ai.authScheme', '') ?? '').trim() || defaults.authScheme,
     extraHeaders,
     temperature,
-    maxTokens
+    maxTokens,
+    promptOptimizer: config.get<boolean>('ai.promptOptimizer', true),
+    promptDebug: config.get<boolean>('ai.promptDebug', false),
+    strictJson: config.get<boolean>('ai.strictJson', false)
   };
 }
 

@@ -82,6 +82,9 @@ export function activate(context: vscode.ExtensionContext) {
           kind: 'selection',
           languageId: editor.document.languageId,
           code: text,
+          filePath: editor.document.uri.fsPath,
+          startLineNumber: selection.start.line + 1,
+          endLineNumber: selection.end.line + 1,
           diagnostics: diagnostics.slice(0, 10).map(d => ({
             message: d.message,
             code:
@@ -91,7 +94,11 @@ export function activate(context: vscode.ExtensionContext) {
           }))
         });
 
-        const verification = verifyAiResult(ai, { diagnosticCodes });
+        const verification = verifyAiResult(ai, {
+          diagnosticCodes,
+          lineRange: { start: selection.start.line + 1, end: selection.end.line + 1 },
+          requireCitations: true
+        });
         modeLabel = 'AI';
         explanation = ai.explanationMarkdown;
         if (!verification.verified) {
@@ -241,6 +248,7 @@ export function activate(context: vscode.ExtensionContext) {
           kind: 'exception',
           languageId: vscode.window.activeTextEditor?.document.languageId ?? 'unknown',
           code: vscode.window.activeTextEditor?.document.getText() ?? '',
+          filePath: vscode.window.activeTextEditor?.document.uri.fsPath,
           runtime: parseRuntimeReport(report)
         });
 
