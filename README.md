@@ -95,6 +95,7 @@ All AI outputs are validated against citations where possible; verification note
 - Remaining gaps plan: `docs/IMPLEMENTATION_PLAN_GAPS.md`
 - Coverage status: `docs/PROPOSAL_STATUS.md`
 - Platform expansion notes: `docs/PLATFORM_PLAN.md`
+- Monetization: `docs/MONETIZATION.md`
 
 ## Troubleshooting
 
