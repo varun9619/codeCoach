@@ -8,8 +8,10 @@ A minimal static-only MVP that helps you understand code and diagnostics.
 - **Explain Diagnostic**: hover on a VS Code diagnostic to see a plain-English explanation + likely causes + fixes.
 - **Trace Diagnostic Origin**: trace a diagnostic back to its enclosing symbol and likely callers.
 - **Show Code Smells**: run a static analysis pass for common performance/maintainability issues.
+- **Test Gap Finder**: uses `lcov.info` to highlight uncovered branches and suggest test inputs.
 - **Deep Dive**: open a sidebar panel with symbol overview, usages, blame, and coverage (if lcov exists).
 - **Smell CodeLens + Quick Fixes**: shows smell counts per function and offers safe quick fixes for certain smells.
+- **Test Gap CodeLens + Quick Fixes**: shows branch coverage per function and offers test stub actions for gaps.
 
 ## AI (optional)
 
@@ -34,6 +36,7 @@ Settings:
   - `codeCoach.ui.traceDiagnosticOrigin`
   - `codeCoach.ui.runtimeException`
   - `codeCoach.ui.codeSmells`
+  - `codeCoach.ui.testGaps`
   (values: `output` or `panel`)
 
 AI citation behavior:
@@ -54,6 +57,7 @@ Prompt optimizer layer:
 - Command Palette → **Code Coach: Explain Diagnostic** (uses the diagnostic under your cursor, else the first in the file)
 - Command Palette → **Code Coach: Trace Diagnostic Origin**
 - Command Palette → **Code Coach: Show Code Smells**
+- Command Palette → **Code Coach: Show Test Gaps**
 - Command Palette → **Code Coach: Deep Dive** (uses the symbol under your cursor)
 
 ## Development

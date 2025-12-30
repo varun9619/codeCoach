@@ -37,12 +37,20 @@
         "title": "Code Coach: Show Code Smells"
       },
       {
+        "command": "codeCoach.showTestGaps",
+        "title": "Code Coach: Show Test Gaps"
+      },
+      {
         "command": "codeCoach.ai.setApiKey",
         "title": "Code Coach: Set AI API Key"
       },
       {
         "command": "codeCoach.ai.clearApiKey",
         "title": "Code Coach: Clear AI API Key"
+      },
+      {
+        "command": "codeCoach.generateTestStub",
+        "title": "Code Coach: Generate Test Stub"
       },
       {
         "command": "codeCoach.deepDive",
@@ -229,6 +237,15 @@
           ],
           "default": "output",
           "description": "Where to display Code Smells reports."
+        },
+        "codeCoach.ui.testGaps": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel"
+          ],
+          "default": "output",
+          "description": "Where to display Test Gap reports."
         }
       }
     },

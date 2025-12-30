@@ -7,13 +7,26 @@ import { aiExplain } from './aiClient';
 import { verifyAiResult } from './aiVerify';
 import { analyzeDocumentForSmells, CodeSmell } from './smells';
 import { SmellCodeActionProvider, SmellCodeLensProvider, toSmellDiagnostic } from './smellProviders';
+import { TestGapCodeActionProvider, TestGapCodeLensProvider } from './testGapProviders';
+import {
+  BranchSummary,
+  TestGap,
+  buildTestGaps,
+  getBranchCoverage,
+  getTestGap,
+  summarizeBranches,
+  storeTestGaps,
+  toTestGapDiagnostic
+} from './testGaps';
 import { buildDeepDiveData, DeepDiveProvider } from './deepDive';
 
 let outputChannel: vscode.OutputChannel | undefined;
 let smellDiagnostics: vscode.DiagnosticCollection | undefined;
+let testGapDiagnostics: vscode.DiagnosticCollection | undefined;
 let deepDiveProvider: DeepDiveProvider | undefined;
 let deepDiveView: vscode.TreeView<any> | undefined;
 let smellCodeLensProvider: SmellCodeLensProvider | undefined;
+let testGapCodeLensProvider: TestGapCodeLensProvider | undefined;
 const panels = new Map<string, vscode.WebviewPanel>();
 
 export function activate(context: vscode.ExtensionContext) {
@@ -23,8 +36,10 @@ export function activate(context: vscode.ExtensionContext) {
   try {
     outputChannel = vscode.window.createOutputChannel('Code Coach');
     smellDiagnostics = vscode.languages.createDiagnosticCollection('codeCoach.smells');
+    testGapDiagnostics = vscode.languages.createDiagnosticCollection('codeCoach.testGaps');
     deepDiveProvider = new DeepDiveProvider();
     smellCodeLensProvider = new SmellCodeLensProvider();
+    testGapCodeLensProvider = new TestGapCodeLensProvider();
 
     // Startup logging for debugging
     outputChannel.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -39,6 +54,7 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('  • Code Coach: Explain Last Exception');
     outputChannel.appendLine('  • Code Coach: Trace Diagnostic Origin');
     outputChannel.appendLine('  • Code Coach: Show Code Smells');
+    outputChannel.appendLine('  • Code Coach: Show Test Gaps');
     outputChannel.appendLine('  • Code Coach: Deep Dive');
     outputChannel.appendLine('  • Code Coach: Set/Clear AI API Key');
     outputChannel.appendLine('');
@@ -54,6 +70,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     outputChannel,
     smellDiagnostics,
+    testGapDiagnostics,
     (deepDiveView = vscode.window.createTreeView('codeCoach.deepDive', { treeDataProvider: deepDiveProvider })),
     vscode.commands.registerCommand('codeCoach.explainSelection', async () => {
       const editor = vscode.window.activeTextEditor;
@@ -203,6 +220,58 @@ export function activate(context: vscode.ExtensionContext) {
       presentResult('Code Coach: Code Smells', 'codeCoach.ui.codeSmells', report);
     }),
 
+    vscode.commands.registerCommand('codeCoach.showTestGaps', async (scope?: vscode.Range) => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage('Open a file to analyze test gaps.');
+        return;
+      }
+
+      const coverage = await getBranchCoverage(editor.document);
+      if (!coverage) {
+        testGapDiagnostics?.set(editor.document.uri, []);
+        vscode.window.showInformationMessage('No lcov.info coverage found for this workspace.');
+        return;
+      }
+
+      const summaryAll = summarizeBranches(coverage.data.branches);
+      if (summaryAll.totalBranches === 0) {
+        testGapDiagnostics?.set(editor.document.uri, []);
+        vscode.window.showInformationMessage('No branch coverage data found for this file.');
+        return;
+      }
+
+      const allGaps = buildTestGaps(editor.document, summaryAll.uncoveredBranches);
+      storeTestGaps(editor.document.uri, allGaps);
+      testGapDiagnostics?.set(editor.document.uri, allGaps.map(gap => toTestGapDiagnostic(gap)));
+
+      const summaryScope = scope ? summarizeBranches(coverage.data.branches, scope) : summaryAll;
+      if (summaryScope.totalBranches === 0) {
+        vscode.window.showInformationMessage('No branch coverage data found in this scope.');
+        return;
+      }
+
+      const scopedGaps =
+        scope && scope instanceof vscode.Range ? allGaps.filter(gap => scope.intersection(gap.range)) : allGaps;
+      let symbolLabel: string | undefined;
+      if (scope) {
+        const symbols = (await vscode.commands.executeCommand(
+          'vscode.executeDocumentSymbolProvider',
+          editor.document.uri
+        )) as vscode.DocumentSymbol[] | undefined;
+        const enclosing = symbols ? findEnclosingSymbol(symbols, scope.start) : undefined;
+        if (enclosing) {
+          symbolLabel = `${symbolKindLabel(enclosing.kind)} ${enclosing.name} (${formatRangeLabel(
+            editor.document,
+            enclosing.range
+          )})`;
+        }
+      }
+
+      const report = formatTestGapReport(editor.document, summaryScope, scopedGaps, scope, coverage.source, symbolLabel);
+      presentResult('Code Coach: Test Gaps', 'codeCoach.ui.testGaps', report);
+    }),
+
     vscode.commands.registerCommand('codeCoach.deepDive', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
@@ -316,6 +385,37 @@ export function activate(context: vscode.ExtensionContext) {
       if (choice !== 'Remove') return;
       await clearAiApiKey(context, provider);
       vscode.window.showInformationMessage(`Code Coach AI API key removed for ${provider}.`);
+    }),
+
+    vscode.commands.registerCommand('codeCoach.generateTestStub', async (uri?: vscode.Uri, line?: number, branch?: number) => {
+      const targetUri = uri ?? vscode.window.activeTextEditor?.document.uri;
+      if (!targetUri || line === undefined || branch === undefined) {
+        vscode.window.showInformationMessage('No test gap context available to generate a stub.');
+        return;
+      }
+
+      const gap = getTestGap(targetUri, line, branch);
+      if (!gap) {
+        vscode.window.showInformationMessage('Test gap details expired. Re-run Code Coach: Show Test Gaps.');
+        return;
+      }
+
+      const document = await vscode.workspace.openTextDocument(targetUri);
+      const symbols = (await vscode.commands.executeCommand(
+        'vscode.executeDocumentSymbolProvider',
+        targetUri
+      )) as vscode.DocumentSymbol[] | undefined;
+      const enclosing = symbols ? findEnclosingSymbol(symbols, new vscode.Position(Math.max(0, line - 1), 0)) : undefined;
+      const scopeLabel = enclosing ? `${symbolKindLabel(enclosing.kind)} ${enclosing.name}` : 'Branch coverage';
+
+      const rel = vscode.workspace.asRelativePath(targetUri.fsPath);
+      const condition = gap.lineText || document.lineAt(Math.max(0, line - 1)).text.trim();
+      const suggestion = gap.suggestion ? `// Suggested input: ${gap.suggestion}` : '// TODO: add input to hit this branch';
+
+      const language = document.languageId.startsWith('typescript') ? 'typescript' : 'javascript';
+      const content = `// Test stub for ${rel}:${line}\n// ${scopeLabel}\n// Condition: ${condition}\n${suggestion}\n\ndescribe('${enclosing?.name ?? 'branch coverage'}', () => {\n  it('covers branch at ${rel}:${line}', () => {\n    // Arrange\n    // Act\n    // Assert\n    expect(true).toBe(true);\n  });\n});\n`;
+      const stubDoc = await vscode.workspace.openTextDocument({ language, content });
+      await vscode.window.showTextDocument(stubDoc, { preview: false });
     })
   );
 
@@ -353,6 +453,15 @@ export function activate(context: vscode.ExtensionContext) {
       ],
       smellCodeLensProvider ?? new SmellCodeLensProvider()
     ),
+    vscode.languages.registerCodeLensProvider(
+      [
+        { language: 'javascript' },
+        { language: 'typescript' },
+        { language: 'javascriptreact' },
+        { language: 'typescriptreact' }
+      ],
+      testGapCodeLensProvider ?? new TestGapCodeLensProvider()
+    ),
     vscode.languages.registerCodeActionsProvider(
       [
         { language: 'javascript' },
@@ -363,11 +472,21 @@ export function activate(context: vscode.ExtensionContext) {
       new SmellCodeActionProvider(),
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
     ),
+    vscode.languages.registerCodeActionsProvider(
+      [
+        { language: 'javascript' },
+        { language: 'typescript' },
+        { language: 'javascriptreact' },
+        { language: 'typescriptreact' }
+      ],
+      new TestGapCodeActionProvider(),
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+    ),
     vscode.workspace.onDidChangeTextDocument(event => {
-      if (!smellCodeLensProvider) return;
       const lang = event.document.languageId;
       if (lang.startsWith('javascript') || lang.startsWith('typescript')) {
-        smellCodeLensProvider.refresh();
+        smellCodeLensProvider?.refresh();
+        testGapCodeLensProvider?.refresh();
       }
     })
   );
@@ -480,8 +599,54 @@ function formatSmellReport(document: vscode.TextDocument, smells: CodeSmell[]): 
   return out.join('\n').trimEnd();
 }
 
+function formatTestGapReport(
+  document: vscode.TextDocument,
+  summary: BranchSummary,
+  gaps: TestGap[],
+  scope: vscode.Range | undefined,
+  source: string,
+  symbolLabel?: string
+): string {
+  const rel = vscode.workspace.asRelativePath(document.uri.fsPath);
+  const out: string[] = [];
+  out.push('Code Coach — Test Gaps');
+  out.push('');
+  out.push(`File: ${rel}`);
+  out.push(`Scope: ${scope ? formatRangeLabel(document, scope) : `${rel}:1-${document.lineCount}`}`);
+  if (symbolLabel) {
+    out.push(`Symbol: ${symbolLabel}`);
+  }
+  out.push(`Coverage source: ${source}`);
+  out.push(`Branches: ${summary.coveredBranches}/${summary.totalBranches} covered`);
+  out.push('');
+
+  if (gaps.length === 0) {
+    out.push('All branches covered in this scope.');
+    return out.join('\n').trimEnd();
+  }
+
+  out.push('Uncovered branches:');
+  for (const gap of gaps.slice(0, 20)) {
+    const branchLabel =
+      gap.branch === 0 ? 'true' : gap.branch === 1 ? 'false' : `branch ${gap.branch}`;
+    out.push(`- ${rel}:${gap.line} (${branchLabel}, block ${gap.block})`);
+    if (gap.lineText) out.push(`  Condition: ${gap.lineText}`);
+    if (gap.suggestion) out.push(`  Suggestion: ${gap.suggestion}`);
+  }
+  if (gaps.length > 20) {
+    out.push(`... and ${gaps.length - 20} more`);
+  }
+
+  return out.join('\n').trimEnd();
+}
+
 function formatRangeLocation(document: vscode.TextDocument, range: vscode.Range): string {
   return `${formatLocation(document.uri, range.start)}`;
+}
+
+function formatRangeLabel(document: vscode.TextDocument, range: vscode.Range): string {
+  const rel = vscode.workspace.asRelativePath(document.uri.fsPath);
+  return `${rel}:${range.start.line + 1}-${range.end.line + 1}`;
 }
 
 function formatLocation(uri: vscode.Uri, position: vscode.Position): string {
@@ -526,11 +691,14 @@ export function deactivate() {
   outputChannel = undefined;
   smellDiagnostics?.dispose();
   smellDiagnostics = undefined;
+  testGapDiagnostics?.dispose();
+  testGapDiagnostics = undefined;
   deepDiveProvider?.setData(undefined);
   deepDiveProvider = undefined;
   deepDiveView?.dispose();
   deepDiveView = undefined;
   smellCodeLensProvider = undefined;
+  testGapCodeLensProvider = undefined;
   for (const panel of panels.values()) {
     panel.dispose();
   }
