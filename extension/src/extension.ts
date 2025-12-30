@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { explainSelection } from './explainSelection';
 import { explainDiagnostic } from './explainDiagnostics';
 import { registerRuntimeTracing } from './runtimeTracing';
@@ -767,10 +769,19 @@ function showInPanel(viewType: string, title: string, content: string): void {
       viewType,
       title,
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-      { enableFindWidget: true, retainContextWhenHidden: true }
+      { enableFindWidget: true, retainContextWhenHidden: true, enableScripts: true }
     );
     panel.onDidDispose(() => {
       panels.delete(viewType);
+    });
+    panel.webview.onDidReceiveMessage(async message => {
+      if (message?.type !== 'openCitation') return;
+      if (typeof message.uri !== 'string') return;
+      const line = typeof message.line === 'number' ? message.line : 0;
+      const column = typeof message.column === 'number' ? message.column : 0;
+      const uri = vscode.Uri.parse(message.uri);
+      const pos = new vscode.Position(Math.max(0, line), Math.max(0, column));
+      await vscode.commands.executeCommand('codeCoach.openLocation', uri, new vscode.Range(pos, pos));
     });
     panels.set(viewType, panel);
   } else {
@@ -782,7 +793,7 @@ function showInPanel(viewType: string, title: string, content: string): void {
 }
 
 function buildPanelHtml(title: string, content: string): string {
-  const escaped = escapeHtml(content);
+  const rendered = renderPanelContent(content);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -811,11 +822,28 @@ function buildPanelHtml(title: string, content: string): string {
       padding: 12px;
       border-radius: 6px;
     }
+    a.citation {
+      color: var(--vscode-textLink-foreground);
+      text-decoration: underline;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <div class="panel-title">${escapeHtml(title)}</div>
-  <pre>${escaped}</pre>
+  <pre>${rendered}</pre>
+  <script>
+    const vscode = acquireVsCodeApi();
+    document.addEventListener('click', event => {
+      const target = event.target.closest('a[data-uri]');
+      if (!target) return;
+      event.preventDefault();
+      const uri = target.getAttribute('data-uri');
+      const line = Number(target.getAttribute('data-line') || '0');
+      const column = Number(target.getAttribute('data-column') || '0');
+      vscode.postMessage({ type: 'openCitation', uri, line, column });
+    });
+  </script>
 </body>
 </html>`;
 }
@@ -827,6 +855,56 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function renderPanelContent(content: string): string {
+  return linkifyCitations(content);
+}
+
+function linkifyCitations(content: string): string {
+  const citationRegex = /(^|[^\\w/\\\\.-])([\\w./\\\\-]+\\.[A-Za-z0-9]+):(\\d+)(?::(\\d+))?/g;
+  let result = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = citationRegex.exec(content)) !== null) {
+    const [fullMatch, prefix, filePart, linePart, columnPart] = match;
+    result += escapeHtml(content.slice(lastIndex, match.index));
+
+    const resolved = resolveCitationPath(filePart);
+    if (resolved) {
+      const uri = vscode.Uri.file(resolved).toString();
+      const line = Math.max(0, Number(linePart) - 1);
+      const column = columnPart ? Math.max(0, Number(columnPart) - 1) : 0;
+      const label = `${filePart}:${linePart}${columnPart ? `:${columnPart}` : ''}`;
+      result += `${escapeHtml(prefix)}<a class="citation" data-uri="${escapeHtml(uri)}" data-line="${line}" data-column="${column}" href="#">${escapeHtml(label)}</a>`;
+    } else {
+      result += escapeHtml(fullMatch);
+    }
+
+    lastIndex = match.index + fullMatch.length;
+  }
+
+  result += escapeHtml(content.slice(lastIndex));
+  return result;
+}
+
+function resolveCitationPath(filePart: string): string | undefined {
+  if (!filePart || filePart.startsWith('http')) return undefined;
+
+  if (path.isAbsolute(filePart) && fs.existsSync(filePart)) {
+    return path.normalize(filePart);
+  }
+
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  for (const folder of folders) {
+    const candidate = path.join(folder.uri.fsPath, filePart);
+    if (fs.existsSync(candidate)) {
+      return path.normalize(candidate);
+    }
+  }
+
+  return undefined;
 }
 
 async function buildDiagnosticOriginData(

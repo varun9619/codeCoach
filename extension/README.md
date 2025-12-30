@@ -42,6 +42,7 @@ Settings:
 AI citation behavior:
 - AI explanations are asked to include line citations (e.g., `src/file.ts:42` or `L42`).
 - For selections, citations are verified to be within the selected line range. Verification notes appear if mismatched.
+- Panel views link file:line citations so you can jump directly to code.
 
 Prompt optimizer layer:
 - User inputs are automatically structured into an "objective / constraints / evidence / output" format before hitting the LLM.
