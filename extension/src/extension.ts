@@ -72,6 +72,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Initialize ConfigManager (cascading config system)
     const configManager = ConfigManager.getInstance();
+    configManager.initialize(context).catch(err => {
+      console.error('[Code Coach] ConfigManager initialization failed:', err);
+    });
     context.subscriptions.push({ dispose: () => configManager.dispose() });
 
     deepDivePins = loadDeepDivePins(context);
