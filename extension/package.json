@@ -103,6 +103,30 @@
       {
         "command": "codeCoach.feedback.notHelpful",
         "title": "Code Coach: Feedback (Not Helpful)"
+      },
+      {
+        "command": "codeCoach.config.init",
+        "title": "Code Coach: Init Config"
+      },
+      {
+        "command": "codeCoach.config.openProject",
+        "title": "Code Coach: Open Project Config"
+      },
+      {
+        "command": "codeCoach.config.openGlobal",
+        "title": "Code Coach: Open Global Config"
+      },
+      {
+        "command": "codeCoach.config.resetProject",
+        "title": "Code Coach: Reset Project Config"
+      },
+      {
+        "command": "codeCoach.config.showResolved",
+        "title": "Code Coach: Show Resolved Config"
+      },
+      {
+        "command": "codeCoach.config.validate",
+        "title": "Code Coach: Validate Config"
       }
     ],
     "menus": {

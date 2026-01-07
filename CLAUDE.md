@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Code Coach is a VS Code extension that provides plain-English explanations of JavaScript/TypeScript code and diagnostics. This is a **static-only MVP** — it analyzes code structure without executing or capturing runtime values.
+Code Coach is a VS Code extension that explains code you did not write. It provides plain-English explanations, debugging guidance, and navigation aids—especially useful for AI-assisted codebases and new team members. The extension supports both static analysis and optional AI-powered explanations via multiple providers.
 
 ## Development Commands
 
@@ -23,27 +23,103 @@ npm run lint         # Run ESLint
 ## Architecture
 
 ```
-extension/
-├── src/
-│   ├── extension.ts          # Entry point: registers commands + hover provider
-│   ├── explainSelection.ts   # Parses selected code via TS compiler API, generates explanations
-│   └── explainDiagnostics.ts # Maps VS Code diagnostics to plain-English cause/fix pairs
-└── out/                      # Compiled JS output
+extension/src/
+├── extension.ts          # Entry point: registers all commands, providers, and activation logic
+├── AI Layer
+│   ├── aiClient.ts       # Multi-provider AI integration (OpenRouter/OpenAI/Anthropic/Gemini/Ollama/LM Studio)
+│   ├── aiSettings.ts     # API key storage (VS Code Secret Storage), provider configuration
+│   ├── aiTypes.ts        # TypeScript interfaces for AI requests/responses
+│   ├── aiVerify.ts       # Citation verification against source ranges
+│   └── promptOptimizer.ts # Structures prompts into objective/constraints/evidence/output format
+├── Core Analysis
+│   ├── explainSelection.ts    # Line-by-line code explanation via TS compiler API
+│   ├── explainDiagnostics.ts  # Maps diagnostic codes to plain-English cause/fix pairs
+│   ├── smells.ts              # Code smell detection (complexity, dead code, nested callbacks, etc.)
+│   ├── testGaps.ts            # Branch coverage analysis from lcov.info/coverage-final.json
+│   └── diagnosticFixes.ts     # Quick fix code actions (optional chaining, non-null assertion)
+├── UI Providers
+│   ├── deepDive.ts            # TreeView sidebar: usages, blame, history, tests, coverage, AI summary
+│   ├── coachMode.ts           # InlayHintsProvider for inline annotations
+│   ├── smellProviders.ts      # CodeLens + CodeAction providers for smell detection
+│   └── testGapProviders.ts    # CodeLens + CodeAction providers for test coverage gaps
+├── Infrastructure
+│   ├── privacy.ts         # Privacy mode enforcement (offline/local/redacted/full)
+│   ├── analysisCache.ts   # Symbol and reference caching for performance
+│   ├── workspaceIndex.ts  # Background symbol prewarming for large repos
+│   ├── runtimeTracing.ts  # Debug session exception capture (opt-in)
+│   └── telemetry.ts       # Local-only telemetry logging
 ```
 
-**Core flow**:
-1. `extension.ts` activates on JS/TS files and registers two commands + a hover provider
-2. Commands pipe selected text or diagnostics to the respective explain functions
-3. Results are displayed in the "Code Coach" Output Channel or as hover tooltips
+## Core Flows
 
-**Key patterns**:
-- Uses TypeScript's compiler API (`ts.createSourceFile`) for lightweight AST parsing in `explainSelection.ts`
-- Pattern-matching on TS diagnostic codes (2304, 2339, 2322, 2345) with fallback heuristics in `explainDiagnostics.ts`
-- Outputs plain Markdown for hovers (`vscode.MarkdownString`)
+### Explain Selection
+1. User selects code → `explainSelection.ts` parses via `ts.createSourceFile`
+2. AST walk generates line-by-line explanations with citations
+3. If AI enabled: enriched via `aiClient.ts` with prompt from `promptOptimizer.ts`
+4. Citations verified against source range via `aiVerify.ts`
+5. Output rendered to configured surface (output channel / panel / peek)
+
+### AI Request Pipeline
+1. Privacy check via `privacy.ts` (blocks if offline mode, restricts to localhost in local mode)
+2. Prompt structured via `promptOptimizer.ts` (objective/constraints/evidence/output format)
+3. Request sent via `aiClient.ts` with provider-specific headers and auth
+4. Response verified for citations via `aiVerify.ts`
+5. Verification notes added if citations don't match source
+
+### Deep Dive Sidebar
+1. User invokes on symbol → `deepDive.ts` gathers:
+   - Symbol overview (signature, JSDoc)
+   - Usages via `vscode.executeReferenceProvider`
+   - Git blame and history via shell commands
+   - Test file detection (heuristic)
+   - Coverage data from parsed lcov/coverage-final.json
+   - AI summary (if enabled)
+2. TreeView displays collapsible sections with navigation links
+3. Supports pinning, section filtering, and markdown export
+
+## Key Patterns
+
+- **Privacy-first**: All AI requests pass through `privacy.ts` which enforces mode restrictions and applies redaction patterns before any data leaves the device
+- **Provider abstraction**: `aiClient.ts` normalizes 6 different AI providers behind a common interface with provider-specific auth headers and endpoints
+- **Citation verification**: AI outputs include line citations that are validated against actual source ranges; unverifiable claims get flagged
+- **Progressive enhancement**: Every feature works in static-only mode; AI adds richer explanations when available
+- **Configurable surfaces**: Each command output can be routed to output channel, webview panel, or peek view via settings
 
 ## Design Principles
 
-- Keep changes minimal and focused on static-only MVP
+- Keep changes minimal and focused
 - Prefer clear, plain-English explanations over verbose output
 - JS/TS first; design for future language adapters
 - Avoid adding extra UI beyond Output Channel and hover text unless requested
+- Privacy modes must be respected—never send code externally in offline/local modes
+
+## Key Settings
+
+**AI Configuration** (`codeCoach.ai.*`):
+- `enabled`, `provider`, `baseUrl`, `model`, `temperature`, `maxTokens`
+- `promptOptimizer`, `promptOptimizerMode`, `strictJson`
+
+**Privacy** (`codeCoach.privacy.*`):
+- `mode` (offline | local | redacted | full)
+- `allowedDomains`, `redactPatterns`, `maxContextChars`
+
+**UI Surfaces** (`codeCoach.ui.*`):
+- Per-command output routing: `explainSelection`, `explainDiagnostic`, `codeSmells`, `testGaps`, etc.
+
+**Performance** (`codeCoach.performance.*`):
+- `prewarmSymbols`, `prewarmFileLimit`, `prewarmDelayMs`, `prewarmGlob`
+
+## Testing the Extension
+
+1. `npm run compile` in `extension/`
+2. Press F5 to launch Extension Host
+3. Open a JS/TS file in the new VS Code window
+4. Test commands via Command Palette (Ctrl/Cmd+Shift+P → "Code Coach: ...")
+
+## Documentation
+
+- Vision and roadmap: `PRODUCT_PROPOSAL.md`
+- Implementation plan: `docs/IMPLEMENTATION_PLAN.md`
+- Gap analysis: `docs/IMPLEMENTATION_PLAN_GAPS.md`
+- Coverage status: `docs/PROPOSAL_STATUS.md`
+- Monetization: `docs/MONETIZATION.md`

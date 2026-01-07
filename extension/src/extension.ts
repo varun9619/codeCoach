@@ -15,6 +15,7 @@ import { CoachModeInlayProvider } from './coachMode';
 import { getDocumentSymbols, getReferences, invalidateDocumentCache } from './analysisCache';
 import { initTelemetry, trackEvent } from './telemetry';
 import { warmSymbolCache } from './workspaceIndex';
+import { ConfigManager, ConfigTemplate } from './configManager';
 import {
   BranchSummary,
   TestGap,
@@ -44,6 +45,7 @@ let lastDeepDiveData: DeepDiveData | undefined;
 let deepDivePins: DeepDivePin[] = [];
 const DEEP_DIVE_PIN_KEY = 'codeCoach.deepDive.pins';
 const ONBOARDING_SHOWN_KEY = 'codeCoach.onboardingShown';
+const CONFIG_PROMPT_DISMISSED_KEY = 'codeCoach.configPromptDismissed';
 let smellCodeLensProvider: SmellCodeLensProvider | undefined;
 let testGapCodeLensProvider: TestGapCodeLensProvider | undefined;
 let coachModeProvider: CoachModeInlayProvider | undefined;
@@ -67,6 +69,10 @@ export function activate(context: vscode.ExtensionContext) {
     peekProvider = new PeekContentProvider();
     peekLinkProvider = new PeekCitationLinkProvider();
     initTelemetry(context);
+
+    // Initialize ConfigManager (cascading config system)
+    const configManager = ConfigManager.getInstance();
+    context.subscriptions.push({ dispose: () => configManager.dispose() });
 
     deepDivePins = loadDeepDivePins(context);
     deepDiveProvider.setPinned(deepDivePins);
@@ -93,6 +99,9 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('  • Code Coach: Deep Dive Sections');
     outputChannel.appendLine('  • Code Coach: Export Deep Dive');
     outputChannel.appendLine('  • Code Coach: Set/Clear AI API Key');
+    outputChannel.appendLine('  • Code Coach: Init Config');
+    outputChannel.appendLine('  • Code Coach: Open Project Config');
+    outputChannel.appendLine('  • Code Coach: Open Global Config');
     outputChannel.appendLine('');
     outputChannel.show(true);
 
@@ -107,6 +116,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     void maybeShowOnboarding(context);
     void warmSymbolCache();
+    void maybePromptConfigInit(context, configManager);
 
     const runtime = registerRuntimeTracing(context, outputChannel);
 
@@ -898,6 +908,131 @@ export function activate(context: vscode.ExtensionContext) {
       const stubDoc = await vscode.workspace.openTextDocument({ language, content });
       await vscode.window.showTextDocument(stubDoc, { preview: false });
       trackEvent('feature_used', { feature: 'test_stub', branch });
+    }),
+
+    // ─────────────────────────────────────────────────────────────
+    // Configuration Management Commands
+    // ─────────────────────────────────────────────────────────────
+    vscode.commands.registerCommand('codeCoach.config.init', async () => {
+      const templates: Array<{ label: string; template: ConfigTemplate; description: string }> = [
+        { label: 'Minimal', template: 'minimal', description: 'Basic config with offline mode' },
+        { label: 'Team Standard', template: 'team-standard', description: 'AI enabled, redacted privacy mode' },
+        { label: 'Enterprise', template: 'enterprise', description: 'Strict controls, audit logging' },
+        { label: 'Copy from Global', template: 'copy-global', description: 'Clone your global settings' }
+      ];
+      const selected = await vscode.window.showQuickPick(templates, {
+        placeHolder: 'Select a config template'
+      });
+      if (!selected) return;
+
+      try {
+        const configPath = await configManager.createConfig('project', selected.template);
+        const doc = await vscode.workspace.openTextDocument(configPath);
+        await vscode.window.showTextDocument(doc, { preview: false });
+        vscode.window.showInformationMessage(`Created project config: ${vscode.workspace.asRelativePath(configPath)}`);
+        trackEvent('config.init', { template: selected.template });
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Failed to create config: ${err.message}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.config.openProject', async () => {
+      const configPath = configManager.getProjectConfigPath();
+      if (!configPath) {
+        const create = await vscode.window.showWarningMessage(
+          'No project config found. Create one?',
+          'Create Config',
+          'Cancel'
+        );
+        if (create === 'Create Config') {
+          await vscode.commands.executeCommand('codeCoach.config.init');
+        }
+        return;
+      }
+      const doc = await vscode.workspace.openTextDocument(configPath);
+      await vscode.window.showTextDocument(doc, { preview: false });
+      trackEvent('config.open', { scope: 'project' });
+    }),
+
+    vscode.commands.registerCommand('codeCoach.config.openGlobal', async () => {
+      const configPath = configManager.getGlobalConfigPath();
+      if (!fs.existsSync(configPath)) {
+        const create = await vscode.window.showWarningMessage(
+          'No global config found. Create one?',
+          'Create Config',
+          'Cancel'
+        );
+        if (create === 'Create Config') {
+          try {
+            await configManager.createConfig('global', 'minimal');
+          } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to create global config: ${err.message}`);
+            return;
+          }
+        } else {
+          return;
+        }
+      }
+      const globalPath = configManager.getGlobalConfigPath();
+      const doc = await vscode.workspace.openTextDocument(globalPath);
+      await vscode.window.showTextDocument(doc, { preview: false });
+      trackEvent('config.open', { scope: 'global' });
+    }),
+
+    vscode.commands.registerCommand('codeCoach.config.resetProject', async () => {
+      const configPath = configManager.getProjectConfigPath();
+      if (!configPath) {
+        vscode.window.showWarningMessage('No project config to reset.');
+        return;
+      }
+      const confirm = await vscode.window.showWarningMessage(
+        'Reset project config to defaults? This will overwrite your current settings.',
+        { modal: true },
+        'Reset'
+      );
+      if (confirm !== 'Reset') return;
+
+      try {
+        await configManager.createConfig('project', 'minimal');
+        const doc = await vscode.workspace.openTextDocument(configPath);
+        await vscode.window.showTextDocument(doc, { preview: false });
+        vscode.window.showInformationMessage('Project config reset to defaults.');
+        trackEvent('config.reset', { scope: 'project' });
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Failed to reset config: ${err.message}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.config.showResolved', async () => {
+      const resolved = configManager.getResolvedConfig();
+      const content = JSON.stringify(resolved, null, 2);
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'json',
+        content: `// Resolved Code Coach Configuration\n// This shows the merged result of: VS Code Settings → Project Config → Global Config → Defaults\n\n${content}`
+      });
+      await vscode.window.showTextDocument(doc, { preview: true });
+      trackEvent('config.showResolved');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.config.validate', async () => {
+      const projectErrors = await configManager.validateProjectConfig();
+      const globalErrors = await configManager.validateGlobalConfig();
+      const allErrors = [
+        ...projectErrors.map(e => `[Project] ${e.key}: ${e.message}`),
+        ...globalErrors.map(e => `[Global] ${e.key}: ${e.message}`)
+      ];
+      if (allErrors.length === 0) {
+        vscode.window.showInformationMessage('✓ All config files are valid!');
+      } else {
+        const errorList = allErrors.map(e => `• ${e}`).join('\n');
+        outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        outputChannel?.appendLine('⚠️ Config Validation Errors:');
+        outputChannel?.appendLine(errorList);
+        outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        outputChannel?.show(true);
+        vscode.window.showWarningMessage(`Found ${allErrors.length} config error(s). See Output for details.`);
+      }
+      trackEvent('config.validate', { errorCount: allErrors.length });
     })
   );
 
@@ -1016,6 +1151,50 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showErrorMessage(`Code Coach failed to activate: ${error}`);
     throw error; // Re-throw to mark activation as failed
   }
+}
+
+/**
+ * Auto-prompt for config initialization on first use.
+ * Triggers 3s after activation in workspaces without a config file.
+ * Users can dismiss permanently via "Don't Ask Again".
+ */
+async function maybePromptConfigInit(context: vscode.ExtensionContext, configManager: ConfigManager): Promise<void> {
+  // Check if we're in a workspace
+  if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+    return;
+  }
+
+  // Check if user has dismissed this prompt permanently
+  const dismissed = context.globalState.get<boolean>(CONFIG_PROMPT_DISMISSED_KEY, false);
+  if (dismissed) {
+    return;
+  }
+
+  // Check if project config already exists
+  const configPath = configManager.getProjectConfigPath();
+  if (configPath && fs.existsSync(configPath)) {
+    return;
+  }
+
+  // Delay the prompt to avoid interrupting startup
+  setTimeout(async () => {
+    const choice = await vscode.window.showInformationMessage(
+      'Create a project configuration file to share Code Coach settings with your team?',
+      'Create Config',
+      'Not Now',
+      "Don't Ask Again"
+    );
+
+    if (choice === 'Create Config') {
+      await vscode.commands.executeCommand('codeCoach.config.init');
+      trackEvent('config.auto_prompt', { action: 'create' });
+    } else if (choice === "Don't Ask Again") {
+      await context.globalState.update(CONFIG_PROMPT_DISMISSED_KEY, true);
+      trackEvent('config.auto_prompt', { action: 'dismiss_permanently' });
+    } else {
+      trackEvent('config.auto_prompt', { action: 'dismiss_once' });
+    }
+  }, 3000);
 }
 
 function parseRuntimeReport(report: string): { stoppedAt?: string; locals?: Array<{ name: string; value: string; type?: string }> } {

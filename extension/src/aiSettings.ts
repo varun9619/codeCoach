@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ConfigManager } from './configManager';
 
 const LEGACY_SECRET_KEY_NAME = 'codeCoach.ai.apiKey';
 const SECRET_KEY_PREFIX = 'codeCoach.ai.apiKey';
@@ -81,26 +82,30 @@ const PROVIDER_DEFAULTS: Record<AiProvider, ProviderDefaults> = {
 };
 
 export function getAiConfig(): AiConfig {
-  const config = vscode.workspace.getConfiguration('codeCoach');
-  const provider = normalizeProvider(config.get<string>('ai.provider', 'openrouter') ?? 'openrouter');
-  const defaults = PROVIDER_DEFAULTS[provider];
-  const responseStyleRaw = (config.get<string>('ai.responseStyle', 'concise') ?? 'concise').trim();
-  const responseStyle: 'concise' | 'detailed' = responseStyleRaw === 'detailed' ? 'detailed' : 'concise';
-  const temperature = clampNumber(config.get<number>('ai.temperature', 0.2), 0, 2, 0.2);
-  const maxTokens = clampNumber(config.get<number>('ai.maxTokens', 800), 64, 4000, 800);
+  const configManager = ConfigManager.getInstance();
+  const vsConfig = vscode.workspace.getConfiguration('codeCoach');
 
+  // Shareable settings from ConfigManager (cascading: project → global → VS Code → defaults)
+  const provider = normalizeProvider(configManager.get<string>('ai.provider', 'openrouter'));
+  const defaults = PROVIDER_DEFAULTS[provider];
+  const responseStyleRaw = configManager.get<string>('ai.responseStyle', 'concise').trim();
+  const responseStyle: 'concise' | 'detailed' = responseStyleRaw === 'detailed' ? 'detailed' : 'concise';
+  const temperature = clampNumber(configManager.get<number>('ai.temperature', 0.2), 0, 2, 0.2);
+  const maxTokens = clampNumber(configManager.get<number>('ai.maxTokens', 800), 64, 4000, 800);
+
+  // VS Code-only settings (personal/sensitive - never in config files)
   const extraHeaders: Record<string, string> = {
     ...(defaults.extraHeaders ?? {})
   };
 
   if (provider === 'openrouter') {
-    const referer = (config.get<string>('ai.openrouter.referer', '') ?? '').trim();
-    const title = (config.get<string>('ai.openrouter.title', '') ?? '').trim();
+    const referer = (vsConfig.get<string>('ai.openrouter.referer', '') ?? '').trim();
+    const title = (vsConfig.get<string>('ai.openrouter.title', '') ?? '').trim();
     if (referer) extraHeaders['HTTP-Referer'] = referer;
     if (title) extraHeaders['X-Title'] = title;
   }
 
-  const configuredExtra = config.get<Record<string, string>>('ai.extraHeaders', {});
+  const configuredExtra = vsConfig.get<Record<string, string>>('ai.extraHeaders', {});
   if (configuredExtra && typeof configuredExtra === 'object') {
     for (const [key, value] of Object.entries(configuredExtra)) {
       if (typeof value === 'string' && value.trim()) {
@@ -110,21 +115,23 @@ export function getAiConfig(): AiConfig {
   }
 
   return {
-    enabled: config.get<boolean>('ai.enabled', false),
+    // Shareable settings (from ConfigManager)
+    enabled: configManager.get<boolean>('ai.enabled', false),
     provider,
-    baseUrl: (config.get<string>('ai.baseUrl', '') ?? '').trim() || defaults.baseUrl,
-    endpointPath: (config.get<string>('ai.endpointPath', '') ?? '').trim() || defaults.endpointPath,
-    model: (config.get<string>('ai.model', '') ?? '').trim() || defaults.model,
+    model: configManager.get<string>('ai.model', '').trim() || defaults.model,
     responseStyle,
-    authHeader: (config.get<string>('ai.authHeader', '') ?? '').trim() || defaults.authHeader,
-    authScheme: (config.get<string>('ai.authScheme', '') ?? '').trim() || defaults.authScheme,
-    extraHeaders,
     temperature,
     maxTokens,
-    promptOptimizer: config.get<boolean>('ai.promptOptimizer', true),
-    promptOptimizerMode: normalizeOptimizerMode(config.get<string>('ai.promptOptimizerMode', 'strict') ?? 'strict'),
-    promptDebug: config.get<boolean>('ai.promptDebug', false),
-    strictJson: config.get<boolean>('ai.strictJson', false)
+    promptOptimizer: configManager.get<boolean>('ai.promptOptimizer', true),
+    promptOptimizerMode: normalizeOptimizerMode(configManager.get<string>('ai.promptOptimizerMode', 'strict')),
+    // VS Code-only settings (personal/sensitive)
+    baseUrl: (vsConfig.get<string>('ai.baseUrl', '') ?? '').trim() || defaults.baseUrl,
+    endpointPath: (vsConfig.get<string>('ai.endpointPath', '') ?? '').trim() || defaults.endpointPath,
+    authHeader: (vsConfig.get<string>('ai.authHeader', '') ?? '').trim() || defaults.authHeader,
+    authScheme: (vsConfig.get<string>('ai.authScheme', '') ?? '').trim() || defaults.authScheme,
+    extraHeaders,
+    promptDebug: vsConfig.get<boolean>('ai.promptDebug', false),
+    strictJson: vsConfig.get<boolean>('ai.strictJson', false)
   };
 }
 

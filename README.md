@@ -96,6 +96,7 @@ All AI outputs are validated against citations where possible; verification note
 - Coverage status: `docs/PROPOSAL_STATUS.md`
 - Platform expansion notes: `docs/PLATFORM_PLAN.md`
 - Monetization: `docs/MONETIZATION.md`
+- Competitive analysis: `docs/COMPETITIVE_MOAT.md`
 
 ## Troubleshooting
 

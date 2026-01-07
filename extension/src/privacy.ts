@@ -1,6 +1,6 @@
-import * as vscode from 'vscode';
 import { AiProvider } from './aiSettings';
 import { AiExplainInput } from './aiTypes';
+import { ConfigManager } from './configManager';
 
 export type PrivacyMode = 'offline' | 'local' | 'redacted' | 'full';
 
@@ -24,11 +24,13 @@ const INJECTION_PATTERNS = [
 ];
 
 export function getPrivacyConfig(): PrivacyConfig {
-  const config = vscode.workspace.getConfiguration('codeCoach');
-  const mode = normalizePrivacyMode(config.get<string>('privacy.mode', 'offline') ?? 'offline');
-  const allowedDomains = (config.get<string[]>('privacy.allowedDomains', []) ?? []).filter(Boolean);
-  const redactPatterns = (config.get<string[]>('privacy.redactPatterns', []) ?? []).filter(Boolean);
-  const maxContextChars = clampNumber(config.get<number>('privacy.maxContextChars', 4000), 500, 50000, 4000);
+  const configManager = ConfigManager.getInstance();
+
+  // All privacy settings are shareable (team config via git)
+  const mode = normalizePrivacyMode(configManager.get<string>('privacy.mode', 'offline'));
+  const allowedDomains = configManager.get<string[]>('privacy.allowedDomains', []).filter(Boolean);
+  const redactPatterns = configManager.get<string[]>('privacy.redactPatterns', []).filter(Boolean);
+  const maxContextChars = clampNumber(configManager.get<number>('privacy.maxContextChars', 4000), 500, 50000, 4000);
 
   return {
     mode,
