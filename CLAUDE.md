@@ -43,6 +43,7 @@ extension/src/
 │   ├── smellProviders.ts      # CodeLens + CodeAction providers for smell detection
 │   └── testGapProviders.ts    # CodeLens + CodeAction providers for test coverage gaps
 ├── Infrastructure
+│   ├── configManager.ts   # Cascading config system (project → global → VS Code → defaults)
 │   ├── privacy.ts         # Privacy mode enforcement (offline/local/redacted/full)
 │   ├── analysisCache.ts   # Symbol and reference caching for performance
 │   ├── workspaceIndex.ts  # Background symbol prewarming for large repos
@@ -123,3 +124,5 @@ extension/src/
 - Gap analysis: `docs/IMPLEMENTATION_PLAN_GAPS.md`
 - Coverage status: `docs/PROPOSAL_STATUS.md`
 - Monetization: `docs/MONETIZATION.md`
+- Competitive analysis: `docs/COMPETITIVE_MOAT.md`
+- **Cascading config system: `docs/CASCADING_CONFIG.md`** (team-shareable settings)
