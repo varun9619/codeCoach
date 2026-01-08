@@ -211,6 +211,26 @@
       {
         "command": "codeCoach.tours.delete",
         "title": "Code Coach: Delete Tour"
+      },
+      {
+        "command": "codeCoach.subscriptions.addFile",
+        "title": "Code Coach: Subscribe to File"
+      },
+      {
+        "command": "codeCoach.subscriptions.addSymbol",
+        "title": "Code Coach: Subscribe to Symbol"
+      },
+      {
+        "command": "codeCoach.subscriptions.manage",
+        "title": "Code Coach: Manage Subscriptions"
+      },
+      {
+        "command": "codeCoach.subscriptions.checkChanges",
+        "title": "Code Coach: Check for Changes"
+      },
+      {
+        "command": "codeCoach.subscriptions.browse",
+        "title": "Code Coach: Browse Subscriptions"
       }
     ],
     "menus": {
@@ -234,6 +254,16 @@
           "command": "codeCoach.teamPins.add",
           "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
           "group": "navigation@52"
+        },
+        {
+          "command": "codeCoach.subscriptions.addFile",
+          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
+          "group": "navigation@53"
+        },
+        {
+          "command": "codeCoach.subscriptions.addSymbol",
+          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
+          "group": "navigation@54"
         }
       ],
       "view/title": [

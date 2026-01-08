@@ -30,6 +30,8 @@ import {
 import { DiffSource, DEFAULT_EXPLAIN_DIFF_CONFIG } from './diffTypes';
 import { TourManager } from './tours/tourManager';
 import { TourRunner } from './tours/tourRunner';
+import { SubscriptionManager } from './subscriptions/subscriptionManager';
+import { ChangeDetector } from './subscriptions/changeDetector';
 import {
   BranchSummary,
   TestGap,
@@ -122,6 +124,13 @@ export function activate(context: vscode.ExtensionContext) {
     const tourRunner = TourRunner.getInstance();
     tourRunner.initialize(context);
     context.subscriptions.push({ dispose: () => tourRunner.dispose() });
+
+    // Initialize SubscriptionManager
+    const subscriptionManager = SubscriptionManager.getInstance();
+    subscriptionManager.initialize(context).catch(err => {
+      console.error('[Code Coach] SubscriptionManager initialization failed:', err);
+    });
+    context.subscriptions.push({ dispose: () => subscriptionManager.dispose() });
 
     deepDivePins = loadDeepDivePins(context);
     deepDiveProvider.setPinned(deepDivePins);
@@ -1699,6 +1708,68 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage(`Tour "${tour.title}" deleted`);
         trackEvent('tours.delete', { tourId });
       }
+    })
+  );
+
+  // Code Change Subscriptions commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codeCoach.subscriptions.addFile', async () => {
+      await subscriptionManager.subscribeToCurrentFile();
+      trackEvent('subscriptions.addFile');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.subscriptions.addSymbol', async () => {
+      await subscriptionManager.subscribeToCurrentSymbol();
+      trackEvent('subscriptions.addSymbol');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.subscriptions.manage', async () => {
+      await subscriptionManager.showManagementUI();
+      trackEvent('subscriptions.manage');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.subscriptions.checkChanges', async () => {
+      const summary = await subscriptionManager.checkForChanges();
+      if (summary.totalChanges === 0) {
+        vscode.window.showInformationMessage('No changes detected in subscribed files.');
+      }
+      trackEvent('subscriptions.checkChanges', { changesFound: summary.totalChanges });
+    }),
+
+    vscode.commands.registerCommand('codeCoach.subscriptions.browse', async () => {
+      const subscriptions = subscriptionManager.getAllSubscriptions();
+
+      outputChannel?.appendLine('');
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.appendLine('Code Change Subscriptions');
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.appendLine('');
+
+      if (subscriptions.length === 0) {
+        outputChannel?.appendLine('No subscriptions yet.');
+        outputChannel?.appendLine('');
+        outputChannel?.appendLine('Subscribe to files or symbols to get notified when they change:');
+        outputChannel?.appendLine('  • Right-click a file → "Subscribe to Changes"');
+        outputChannel?.appendLine('  • Run "Code Coach: Subscribe to File/Symbol"');
+      } else {
+        for (const sub of subscriptions) {
+          const statusIcon = sub.active ? '●' : '○';
+          const label = sub.type === 'file' ? sub.pattern :
+                        sub.type === 'symbol' ? `${sub.symbol} (${sub.filePath})` :
+                        `${sub.path}${sub.recursive ? '/**' : '/*'}`;
+
+          outputChannel?.appendLine(`${statusIcon} [${sub.type.toUpperCase()}] ${label}`);
+          if (sub.reason) {
+            outputChannel?.appendLine(`   Reason: ${sub.reason}`);
+          }
+          outputChannel?.appendLine(`   Notify: ${sub.notify} • Created: ${new Date(sub.createdAt).toLocaleDateString()}`);
+          outputChannel?.appendLine('');
+        }
+      }
+
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.show(true);
+      trackEvent('subscriptions.browse');
     })
   );
 
