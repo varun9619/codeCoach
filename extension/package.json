@@ -163,6 +163,18 @@
       {
         "command": "codeCoach.teamPins.editAnnotation",
         "title": "Code Coach: Edit Team Pin Annotation"
+      },
+      {
+        "command": "codeCoach.explainDiff",
+        "title": "Code Coach: Explain Diff"
+      },
+      {
+        "command": "codeCoach.explainDiffStaged",
+        "title": "Code Coach: Explain Staged Changes"
+      },
+      {
+        "command": "codeCoach.explainCommit",
+        "title": "Code Coach: Explain Commit"
       }
     ],
     "menus": {
@@ -235,6 +247,18 @@
           "command": "codeCoach.teamPins.remove",
           "when": "view == codeCoach.deepDive && viewItem == teamPin",
           "group": "navigation@3"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "codeCoach.explainDiff",
+          "group": "navigation@100",
+          "when": "scmProvider == git"
+        },
+        {
+          "command": "codeCoach.explainDiffStaged",
+          "group": "navigation@101",
+          "when": "scmProvider == git"
         }
       ]
     },

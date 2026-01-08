@@ -19,6 +19,16 @@ import { ConfigManager, ConfigTemplate } from './configManager';
 import { TemplateManager } from './templates/templateManager';
 import { TeamPinManager, SUGGESTED_TAGS, symbolKindToString } from './teamPins';
 import {
+  getRepoRoot,
+  getWorkingTreeDiff,
+  getCommitDiff,
+  parseDiff,
+  generateStaticDiffExplanation,
+  formatDiffExplanationMarkdown,
+  describeSource
+} from './explainDiff';
+import { DiffSource, DEFAULT_EXPLAIN_DIFF_CONFIG } from './diffTypes';
+import {
   BranchSummary,
   TestGap,
   buildTestGaps,
@@ -1364,6 +1374,113 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('Team pin updated');
         trackEvent('teamPins.editAnnotation');
       }
+    })
+  );
+
+  // Explain Diff commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codeCoach.explainDiff', async () => {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        vscode.window.showWarningMessage('No workspace folder open');
+        return;
+      }
+
+      const repoRoot = await getRepoRoot(workspaceFolder);
+      if (!repoRoot) {
+        vscode.window.showWarningMessage('Not a git repository');
+        return;
+      }
+
+      // Get unstaged changes
+      const diffText = await getWorkingTreeDiff(repoRoot, false);
+      if (!diffText.trim()) {
+        vscode.window.showInformationMessage('No uncommitted changes to explain');
+        return;
+      }
+
+      const source: DiffSource = { type: 'working', staged: false };
+      const diff = parseDiff(diffText);
+      const explanation = generateStaticDiffExplanation(diff, source, DEFAULT_EXPLAIN_DIFF_CONFIG);
+      const markdown = formatDiffExplanationMarkdown(explanation);
+
+      outputChannel?.appendLine('');
+      outputChannel?.appendLine(markdown);
+      outputChannel?.show(true);
+      trackEvent('explainDiff', { source: 'working', filesChanged: diff.stats.filesChanged });
+    }),
+
+    vscode.commands.registerCommand('codeCoach.explainDiffStaged', async () => {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        vscode.window.showWarningMessage('No workspace folder open');
+        return;
+      }
+
+      const repoRoot = await getRepoRoot(workspaceFolder);
+      if (!repoRoot) {
+        vscode.window.showWarningMessage('Not a git repository');
+        return;
+      }
+
+      // Get staged changes
+      const diffText = await getWorkingTreeDiff(repoRoot, true);
+      if (!diffText.trim()) {
+        vscode.window.showInformationMessage('No staged changes to explain');
+        return;
+      }
+
+      const source: DiffSource = { type: 'working', staged: true };
+      const diff = parseDiff(diffText);
+      const explanation = generateStaticDiffExplanation(diff, source, DEFAULT_EXPLAIN_DIFF_CONFIG);
+      const markdown = formatDiffExplanationMarkdown(explanation);
+
+      outputChannel?.appendLine('');
+      outputChannel?.appendLine(markdown);
+      outputChannel?.show(true);
+      trackEvent('explainDiff', { source: 'staged', filesChanged: diff.stats.filesChanged });
+    }),
+
+    vscode.commands.registerCommand('codeCoach.explainCommit', async (commitHash?: string) => {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        vscode.window.showWarningMessage('No workspace folder open');
+        return;
+      }
+
+      const repoRoot = await getRepoRoot(workspaceFolder);
+      if (!repoRoot) {
+        vscode.window.showWarningMessage('Not a git repository');
+        return;
+      }
+
+      // If no commit hash provided, ask user to input one
+      if (!commitHash) {
+        commitHash = await vscode.window.showInputBox({
+          prompt: 'Enter commit hash to explain',
+          placeHolder: 'e.g., HEAD, abc1234, main~1'
+        });
+      }
+
+      if (!commitHash) {
+        return; // Cancelled
+      }
+
+      const diffText = await getCommitDiff(repoRoot, commitHash);
+      if (!diffText.trim()) {
+        vscode.window.showWarningMessage(`No changes found for commit: ${commitHash}`);
+        return;
+      }
+
+      const source: DiffSource = { type: 'commit', hash: commitHash };
+      const diff = parseDiff(diffText);
+      const explanation = generateStaticDiffExplanation(diff, source, DEFAULT_EXPLAIN_DIFF_CONFIG);
+      const markdown = formatDiffExplanationMarkdown(explanation);
+
+      outputChannel?.appendLine('');
+      outputChannel?.appendLine(markdown);
+      outputChannel?.show(true);
+      trackEvent('explainDiff', { source: 'commit', filesChanged: diff.stats.filesChanged });
     })
   );
 
