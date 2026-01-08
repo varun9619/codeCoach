@@ -4,6 +4,8 @@ import { buildOptimizedPrompt, PromptOptimizerMode } from './promptOptimizer';
 import { AiExplainInput, AiExplainResult } from './aiTypes';
 import { enforcePrivacyPolicy, getPrivacyConfig, sanitizeAiInput } from './privacy';
 import { trackEvent } from './telemetry';
+import { ExplanationCache } from './cache/explanationCache';
+import { CacheLookupRequest, CacheStoreRequest } from './cache/cacheTypes';
 
 export type { AiExplainInput, AiExplainResult } from './aiTypes';
 
@@ -20,6 +22,36 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
   }
 
   const privacy = getPrivacyConfig();
+
+  // Check cache before making API call
+  const cache = ExplanationCache.getInstance();
+  const canCache = input.kind === 'explain' && input.filePath && input.sourceCode;
+  const cacheRequest: CacheLookupRequest | undefined = canCache ? {
+    filePath: input.filePath!,
+    startLine: input.startLine ?? 1,
+    endLine: input.endLine ?? 1,
+    sourceCode: input.sourceCode!,
+    templateId: input.templateId ?? 'default',
+    privacyMode: privacy.mode === 'redacted' ? 'redacted' : 'full'
+  } : undefined;
+
+  if (cacheRequest) {
+    const cacheResult = cache.lookup(cacheRequest);
+    if (cacheResult.hit && cacheResult.entry) {
+      trackEvent('llm.cacheHit', {
+        kind: input.kind,
+        templateId: cacheRequest.templateId,
+        cachedBy: cacheResult.entry.createdBy
+      });
+      return {
+        explanationMarkdown: cacheResult.entry.explanation,
+        confidence: 'high',
+        cached: true,
+        cachedBy: cacheResult.entry.createdBy,
+        cachedAt: cacheResult.entry.createdAt
+      };
+    }
+  }
   const decision = enforcePrivacyPolicy(privacy, cfg.provider, cfg.baseUrl);
   if (!decision.allowed) {
     trackEvent('llm.blocked', {
@@ -107,6 +139,12 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
       responseChars: content.length,
       parsed: true
     });
+
+    // Store in cache if applicable
+    if (cacheRequest && parsed.explanationMarkdown) {
+      storeCacheEntry(cache, cacheRequest, parsed.explanationMarkdown, cfg);
+    }
+
     return parsed;
   }
 
@@ -129,10 +167,39 @@ export async function aiExplain(context: vscode.ExtensionContext, input: AiExpla
     parsed: false
   });
 
-  return {
+  const result = {
     explanationMarkdown: content.trim(),
-    confidence: 'low'
+    confidence: 'low' as const
   };
+
+  // Store in cache if applicable
+  if (cacheRequest && result.explanationMarkdown) {
+    storeCacheEntry(cache, cacheRequest, result.explanationMarkdown, cfg);
+  }
+
+  return result;
+}
+
+/**
+ * Store an explanation in the cache
+ */
+async function storeCacheEntry(
+  cache: ExplanationCache,
+  request: CacheLookupRequest,
+  explanation: string,
+  cfg: AiConfig
+): Promise<void> {
+  const author = await cache.getDefaultAuthor();
+  const storeRequest: CacheStoreRequest = {
+    ...request,
+    explanation,
+    author,
+    provider: cfg.provider,
+    model: cfg.model
+  };
+  cache.store(storeRequest).catch(err => {
+    console.error('[Code Coach] Failed to cache explanation:', err);
+  });
 }
 
 type ProviderBodyInput = {

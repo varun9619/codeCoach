@@ -32,6 +32,7 @@ import { TourManager } from './tours/tourManager';
 import { TourRunner } from './tours/tourRunner';
 import { SubscriptionManager } from './subscriptions/subscriptionManager';
 import { ChangeDetector } from './subscriptions/changeDetector';
+import { ExplanationCache } from './cache/explanationCache';
 import {
   BranchSummary,
   TestGap,
@@ -131,6 +132,13 @@ export function activate(context: vscode.ExtensionContext) {
       console.error('[Code Coach] SubscriptionManager initialization failed:', err);
     });
     context.subscriptions.push({ dispose: () => subscriptionManager.dispose() });
+
+    // Initialize ExplanationCache
+    const explanationCache = ExplanationCache.getInstance();
+    explanationCache.initialize(context).catch(err => {
+      console.error('[Code Coach] ExplanationCache initialization failed:', err);
+    });
+    context.subscriptions.push({ dispose: () => explanationCache.dispose() });
 
     deepDivePins = loadDeepDivePins(context);
     deepDiveProvider.setPinned(deepDivePins);
@@ -1770,6 +1778,36 @@ export function activate(context: vscode.ExtensionContext) {
       outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       outputChannel?.show(true);
       trackEvent('subscriptions.browse');
+    })
+  );
+
+  // Explanation Cache commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codeCoach.cache.manage', async () => {
+      await explanationCache.showManagementUI();
+      trackEvent('cache.manage');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.cache.clear', async () => {
+      const stats = explanationCache.getStats();
+      const confirm = await vscode.window.showWarningMessage(
+        `Clear all ${stats.entryCount} cached explanations?`,
+        { modal: true },
+        'Clear'
+      );
+      if (confirm === 'Clear') {
+        await explanationCache.clearCache();
+        vscode.window.showInformationMessage('Explanation cache cleared');
+        trackEvent('cache.clear');
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.cache.stats', async () => {
+      if (outputChannel) {
+        explanationCache.showStats(outputChannel);
+        outputChannel.show(true);
+      }
+      trackEvent('cache.stats');
     })
   );
 

@@ -231,6 +231,18 @@
       {
         "command": "codeCoach.subscriptions.browse",
         "title": "Code Coach: Browse Subscriptions"
+      },
+      {
+        "command": "codeCoach.cache.manage",
+        "title": "Code Coach: Manage Explanation Cache"
+      },
+      {
+        "command": "codeCoach.cache.clear",
+        "title": "Code Coach: Clear Explanation Cache"
+      },
+      {
+        "command": "codeCoach.cache.stats",
+        "title": "Code Coach: Show Cache Statistics"
       }
     ],
     "menus": {
