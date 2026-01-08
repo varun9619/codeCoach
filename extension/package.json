@@ -127,6 +127,22 @@
       {
         "command": "codeCoach.config.validate",
         "title": "Code Coach: Validate Config"
+      },
+      {
+        "command": "codeCoach.templates.select",
+        "title": "Code Coach: Select Explanation Template"
+      },
+      {
+        "command": "codeCoach.templates.create",
+        "title": "Code Coach: Create Custom Template"
+      },
+      {
+        "command": "codeCoach.templates.setDefault",
+        "title": "Code Coach: Set Default Template"
+      },
+      {
+        "command": "codeCoach.templates.browse",
+        "title": "Code Coach: Browse Templates"
       }
     ],
     "menus": {

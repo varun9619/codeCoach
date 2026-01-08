@@ -61,6 +61,10 @@ const SHAREABLE_KEYS = new Set([
     'performance.prewarmExclude',
     'coachMode.enabled',
     'coachMode.maxHints',
+    'templates.default',
+    'templates.showPicker',
+    'templates.customTemplatesPath',
+    'templates.maxRecentTemplates',
     'testGaps.coveragePaths',
     'enterprise.allowedAiProviders',
     'enterprise.auditLogPath'
@@ -108,6 +112,12 @@ export interface CodeCoachConfig {
     coachMode?: {
         enabled?: boolean;
         maxHints?: number;
+    };
+    templates?: {
+        default?: string;
+        showPicker?: boolean;
+        customTemplatesPath?: string;
+        maxRecentTemplates?: number;
     };
     testGaps?: {
         coveragePaths?: string[];

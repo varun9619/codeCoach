@@ -16,6 +16,7 @@ import { getDocumentSymbols, getReferences, invalidateDocumentCache } from './an
 import { initTelemetry, trackEvent } from './telemetry';
 import { warmSymbolCache } from './workspaceIndex';
 import { ConfigManager, ConfigTemplate } from './configManager';
+import { TemplateManager } from './templates/templateManager';
 import {
   BranchSummary,
   TestGap,
@@ -76,6 +77,13 @@ export function activate(context: vscode.ExtensionContext) {
       console.error('[Code Coach] ConfigManager initialization failed:', err);
     });
     context.subscriptions.push({ dispose: () => configManager.dispose() });
+
+    // Initialize TemplateManager
+    const templateManager = TemplateManager.getInstance();
+    templateManager.initialize(context).catch(err => {
+      console.error('[Code Coach] TemplateManager initialization failed:', err);
+    });
+    context.subscriptions.push({ dispose: () => templateManager.dispose() });
 
     deepDivePins = loadDeepDivePins(context);
     deepDiveProvider.setPinned(deepDivePins);
@@ -1036,6 +1044,79 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage(`Found ${allErrors.length} config error(s). See Output for details.`);
       }
       trackEvent('config.validate', { errorCount: allErrors.length });
+    })
+  );
+
+  // Template commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codeCoach.templates.select', async () => {
+      const result = await templateManager.pickTemplate(context);
+      if (result) {
+        vscode.window.showInformationMessage(`Selected template: ${result.template.name}`);
+        trackEvent('templates.select', { templateId: result.template.id });
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.templates.create', async () => {
+      const template = await templateManager.createTemplateWizard();
+      if (template) {
+        trackEvent('templates.create', { templateId: template.id });
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.templates.setDefault', async () => {
+      const templates = templateManager.getAllTemplates();
+      const items = templates.map(t => ({
+        label: `${t.icon} ${t.name}`,
+        description: t.isBuiltIn ? 'Built-in' : 'Custom',
+        templateId: t.id
+      }));
+
+      const picked = await vscode.window.showQuickPick(items, {
+        title: 'Set Default Template',
+        placeHolder: 'Select the template to use by default'
+      });
+
+      if (picked) {
+        const configPath = configManager.getProjectConfigPath();
+        if (configPath && fs.existsSync(configPath)) {
+          try {
+            const content = fs.readFileSync(configPath, 'utf8');
+            const config = JSON.parse(content);
+            config.templates = config.templates || {};
+            config.templates.default = picked.templateId;
+            fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+            vscode.window.showInformationMessage(`Default template set to: ${picked.label}`);
+            trackEvent('templates.setDefault', { templateId: picked.templateId });
+          } catch (err) {
+            vscode.window.showErrorMessage('Failed to update config file');
+          }
+        } else {
+          vscode.window.showWarningMessage('No project config. Run "Code Coach: Init Config" first.');
+        }
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.templates.browse', async () => {
+      const templates = templateManager.getAllTemplates();
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.appendLine('📝 Available Explanation Templates');
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.appendLine('');
+
+      for (const t of templates) {
+        outputChannel?.appendLine(`${t.icon} ${t.name} (${t.id})`);
+        outputChannel?.appendLine(`   ${t.description}`);
+        outputChannel?.appendLine(`   Type: ${t.isBuiltIn ? 'Built-in' : 'Custom'}`);
+        outputChannel?.appendLine(`   Audience: ${t.audience}`);
+        outputChannel?.appendLine('');
+      }
+
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.appendLine('Run "Code Coach: Create Custom Template" to add your own.');
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.show(true);
+      trackEvent('templates.browse');
     })
   );
 

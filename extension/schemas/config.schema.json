@@ -245,6 +245,35 @@
         }
       }
     },
+    "templates": {
+      "type": "object",
+      "description": "Explanation template settings",
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "type": "string",
+          "description": "Default template ID to use for explanations",
+          "default": "default"
+        },
+        "showPicker": {
+          "type": "boolean",
+          "description": "Show template picker on every explain command",
+          "default": true
+        },
+        "customTemplatesPath": {
+          "type": "string",
+          "description": "Path to custom templates directory (relative to .code-coach/)",
+          "default": "templates"
+        },
+        "maxRecentTemplates": {
+          "type": "integer",
+          "description": "Maximum recent templates to remember",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 5
+        }
+      }
+    },
     "testGaps": {
       "type": "object",
       "description": "Test Gap Finder settings",
