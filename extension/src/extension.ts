@@ -33,6 +33,7 @@ import { TourRunner } from './tours/tourRunner';
 import { SubscriptionManager } from './subscriptions/subscriptionManager';
 import { ChangeDetector } from './subscriptions/changeDetector';
 import { ExplanationCache } from './cache/explanationCache';
+import { GraphPanel } from './graph/graphPanel';
 import {
   BranchSummary,
   TestGap,
@@ -1808,6 +1809,25 @@ export function activate(context: vscode.ExtensionContext) {
         outputChannel.show(true);
       }
       trackEvent('cache.stats');
+    })
+  );
+
+  // Team Knowledge Graph commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codeCoach.graph.show', async () => {
+      await GraphPanel.createOrShow(context.extensionUri);
+      trackEvent('graph.show');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.graph.focus', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (editor) {
+        const relativePath = vscode.workspace.asRelativePath(editor.document.uri);
+        await GraphPanel.createOrShow(context.extensionUri, relativePath);
+        trackEvent('graph.focus');
+      } else {
+        await GraphPanel.createOrShow(context.extensionUri);
+      }
     })
   );
 

@@ -243,6 +243,14 @@
       {
         "command": "codeCoach.cache.stats",
         "title": "Code Coach: Show Cache Statistics"
+      },
+      {
+        "command": "codeCoach.graph.show",
+        "title": "Code Coach: Show Knowledge Graph"
+      },
+      {
+        "command": "codeCoach.graph.focus",
+        "title": "Code Coach: Focus Knowledge Graph on Current File"
       }
     ],
     "menus": {
