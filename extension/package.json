@@ -143,6 +143,26 @@
       {
         "command": "codeCoach.templates.browse",
         "title": "Code Coach: Browse Templates"
+      },
+      {
+        "command": "codeCoach.teamPins.add",
+        "title": "Code Coach: Pin Symbol for Team"
+      },
+      {
+        "command": "codeCoach.teamPins.remove",
+        "title": "Code Coach: Remove Team Pin"
+      },
+      {
+        "command": "codeCoach.teamPins.open",
+        "title": "Code Coach: Open Team Pin"
+      },
+      {
+        "command": "codeCoach.teamPins.browse",
+        "title": "Code Coach: Browse Team Pins"
+      },
+      {
+        "command": "codeCoach.teamPins.editAnnotation",
+        "title": "Code Coach: Edit Team Pin Annotation"
       }
     ],
     "menus": {
@@ -161,6 +181,11 @@
           "command": "codeCoach.deepDive",
           "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
           "group": "navigation@51"
+        },
+        {
+          "command": "codeCoach.teamPins.add",
+          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
+          "group": "navigation@52"
         }
       ],
       "view/title": [
@@ -195,6 +220,21 @@
           "command": "codeCoach.deepDive.unpin",
           "when": "view == codeCoach.deepDive && viewItem == deepDivePin",
           "group": "navigation@2"
+        },
+        {
+          "command": "codeCoach.teamPins.open",
+          "when": "view == codeCoach.deepDive && viewItem == teamPin",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codeCoach.teamPins.editAnnotation",
+          "when": "view == codeCoach.deepDive && viewItem == teamPin",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codeCoach.teamPins.remove",
+          "when": "view == codeCoach.deepDive && viewItem == teamPin",
+          "group": "navigation@3"
         }
       ]
     },

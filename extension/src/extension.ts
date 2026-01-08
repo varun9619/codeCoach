@@ -17,6 +17,7 @@ import { initTelemetry, trackEvent } from './telemetry';
 import { warmSymbolCache } from './workspaceIndex';
 import { ConfigManager, ConfigTemplate } from './configManager';
 import { TemplateManager } from './templates/templateManager';
+import { TeamPinManager, SUGGESTED_TAGS, symbolKindToString } from './teamPins';
 import {
   BranchSummary,
   TestGap,
@@ -84,6 +85,19 @@ export function activate(context: vscode.ExtensionContext) {
       console.error('[Code Coach] TemplateManager initialization failed:', err);
     });
     context.subscriptions.push({ dispose: () => templateManager.dispose() });
+
+    // Initialize TeamPinManager
+    const teamPinManager = TeamPinManager.getInstance();
+    teamPinManager.initialize(context).catch(err => {
+      console.error('[Code Coach] TeamPinManager initialization failed:', err);
+    });
+    context.subscriptions.push({ dispose: () => teamPinManager.dispose() });
+
+    // Wire up team pins to Deep Dive provider
+    deepDiveProvider.setTeamPins(teamPinManager.getAllPins());
+    teamPinManager.onPinsChanged(() => {
+      deepDiveProvider?.setTeamPins(teamPinManager.getAllPins());
+    });
 
     deepDivePins = loadDeepDivePins(context);
     deepDiveProvider.setPinned(deepDivePins);
@@ -1117,6 +1131,239 @@ export function activate(context: vscode.ExtensionContext) {
       outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       outputChannel?.show(true);
       trackEvent('templates.browse');
+    })
+  );
+
+  // Team Pins commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codeCoach.teamPins.add', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showWarningMessage('No active editor');
+        return;
+      }
+
+      // Find the symbol at cursor
+      const symbols = await getDocumentSymbols(editor.document);
+      if (!symbols || symbols.length === 0) {
+        vscode.window.showWarningMessage('No symbols found in this document');
+        return;
+      }
+
+      const position = editor.selection.active;
+      const symbol = findEnclosingSymbol(symbols, position);
+      if (!symbol) {
+        vscode.window.showWarningMessage('No symbol found at cursor position');
+        return;
+      }
+
+      // Check if already pinned
+      const filePath = editor.document.uri.fsPath;
+      const line = symbol.selectionRange.start.line + 1;
+      if (teamPinManager.isPinned(filePath, line)) {
+        vscode.window.showInformationMessage('This symbol is already pinned for the team');
+        return;
+      }
+
+      // Ask for annotation
+      const annotation = await vscode.window.showInputBox({
+        prompt: 'Why is this symbol important?',
+        placeHolder: 'e.g., Core auth logic - check before modifying',
+        validateInput: (value) => {
+          if (!value || value.trim().length < 3) {
+            return 'Please provide a brief description';
+          }
+          return undefined;
+        }
+      });
+
+      if (!annotation) {
+        return; // Cancelled
+      }
+
+      // Ask for tags (optional)
+      const tagItems = SUGGESTED_TAGS.map(tag => ({
+        label: tag.label,
+        description: tag.description,
+        picked: false
+      }));
+
+      const selectedTags = await vscode.window.showQuickPick(tagItems, {
+        canPickMany: true,
+        placeHolder: 'Select tags (optional)',
+        title: 'Categorize this pin'
+      });
+
+      const tags = selectedTags?.map(t => t.label) ?? [];
+
+      // Get author
+      const author = await teamPinManager.getDefaultAuthor();
+
+      // Create the pin
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      const relativePath = workspaceFolder
+        ? path.relative(workspaceFolder.uri.fsPath, filePath)
+        : filePath;
+
+      try {
+        const pin = await teamPinManager.addPin({
+          symbol: symbol.name,
+          filePath: relativePath,
+          line,
+          character: symbol.selectionRange.start.character,
+          kind: symbolKindToString(symbol.kind),
+          annotation: annotation.trim(),
+          author,
+          tags: tags.length > 0 ? tags : undefined
+        });
+
+        vscode.window.showInformationMessage(
+          `Pinned "${symbol.name}" for the team. Commit .code-coach/pins.json to share.`
+        );
+        trackEvent('teamPins.add', { kind: pin.kind, tagsCount: tags.length });
+      } catch (err) {
+        vscode.window.showErrorMessage(`Failed to create team pin: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.teamPins.remove', async (pinId?: string) => {
+      if (!pinId) {
+        // Show picker if no ID provided
+        const pins = teamPinManager.getAllPins();
+        if (pins.length === 0) {
+          vscode.window.showInformationMessage('No team pins to remove');
+          return;
+        }
+
+        const items = pins.map(pin => ({
+          label: `★ ${pin.symbol}`,
+          description: `${pin.filePath}:${pin.line}`,
+          detail: pin.annotation,
+          pinId: pin.id
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: 'Select a team pin to remove',
+          title: 'Remove Team Pin'
+        });
+
+        if (!selected) return;
+        pinId = selected.pinId;
+      }
+
+      const removed = await teamPinManager.removePin(pinId);
+      if (removed) {
+        vscode.window.showInformationMessage('Team pin removed');
+        trackEvent('teamPins.remove');
+      } else {
+        vscode.window.showWarningMessage('Team pin not found');
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.teamPins.open', async (pinId: string) => {
+      const pin = teamPinManager.getPin(pinId);
+      if (!pin) {
+        vscode.window.showWarningMessage('Team pin not found');
+        return;
+      }
+
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) return;
+
+      const absolutePath = path.join(workspaceFolder.uri.fsPath, pin.filePath);
+      const uri = vscode.Uri.file(absolutePath);
+      const range = new vscode.Range(
+        Math.max(0, pin.line - 1),
+        pin.character,
+        Math.max(0, pin.line - 1),
+        pin.character
+      );
+
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+      editor.selection = new vscode.Selection(range.start, range.start);
+      trackEvent('teamPins.open');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.teamPins.browse', async () => {
+      const pins = teamPinManager.getAllPins();
+
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.appendLine('★ Team Pinned Symbols');
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.appendLine('');
+
+      if (pins.length === 0) {
+        outputChannel?.appendLine('No team pins yet.');
+        outputChannel?.appendLine('');
+        outputChannel?.appendLine('To pin a symbol for your team:');
+        outputChannel?.appendLine('1. Place cursor on a symbol');
+        outputChannel?.appendLine('2. Run "Code Coach: Pin Symbol for Team"');
+        outputChannel?.appendLine('3. Commit .code-coach/pins.json to share');
+      } else {
+        for (const pin of pins) {
+          outputChannel?.appendLine(`★ ${pin.symbol} (${pin.kind})`);
+          outputChannel?.appendLine(`   "${pin.annotation}"`);
+          outputChannel?.appendLine(`   📍 ${pin.filePath}:${pin.line}`);
+          if (pin.tags && pin.tags.length > 0) {
+            outputChannel?.appendLine(`   🏷️  ${pin.tags.join(', ')}`);
+          }
+          outputChannel?.appendLine(`   👤 @${pin.author} • ${new Date(pin.createdAt).toLocaleDateString()}`);
+          outputChannel?.appendLine('');
+        }
+      }
+
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.show(true);
+      trackEvent('teamPins.browse');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.teamPins.editAnnotation', async (pinId?: string) => {
+      if (!pinId) {
+        const pins = teamPinManager.getAllPins();
+        if (pins.length === 0) {
+          vscode.window.showInformationMessage('No team pins to edit');
+          return;
+        }
+
+        const items = pins.map(pin => ({
+          label: `★ ${pin.symbol}`,
+          description: pin.annotation,
+          pinId: pin.id
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: 'Select a team pin to edit',
+          title: 'Edit Team Pin Annotation'
+        });
+
+        if (!selected) return;
+        pinId = selected.pinId;
+      }
+
+      const pin = teamPinManager.getPin(pinId);
+      if (!pin) {
+        vscode.window.showWarningMessage('Team pin not found');
+        return;
+      }
+
+      const newAnnotation = await vscode.window.showInputBox({
+        prompt: 'Update annotation',
+        value: pin.annotation,
+        validateInput: (value) => {
+          if (!value || value.trim().length < 3) {
+            return 'Please provide a brief description';
+          }
+          return undefined;
+        }
+      });
+
+      if (newAnnotation && newAnnotation !== pin.annotation) {
+        await teamPinManager.updatePin(pinId, { annotation: newAnnotation.trim() });
+        vscode.window.showInformationMessage('Team pin updated');
+        trackEvent('teamPins.editAnnotation');
+      }
     })
   );
 

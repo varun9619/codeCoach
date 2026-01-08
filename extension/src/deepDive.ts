@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as path from 'node:path';
 import { getDocumentSymbols, getReferences } from './analysisCache';
+import { TeamPin, TeamPinManager, stringToSymbolKind } from './teamPins';
 
 const execFileAsync = promisify(execFile);
 
@@ -54,7 +55,7 @@ export type DeepDiveSummary = {
   source: 'ai' | 'static';
 };
 
-export type DeepDiveSection = 'overview' | 'usages' | 'blame' | 'history' | 'summary' | 'tests' | 'coverage' | 'pinned';
+export type DeepDiveSection = 'overview' | 'usages' | 'blame' | 'history' | 'summary' | 'tests' | 'coverage' | 'pinned' | 'teamPinned';
 
 export type DeepDivePin = {
   id: string;
@@ -89,6 +90,7 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
   private rootItems: DeepDiveItem[] = [];
   private parentMap = new Map<DeepDiveItem, DeepDiveItem | undefined>();
   private pinned: DeepDivePin[] = [];
+  private teamPins: TeamPin[] = [];
   private sectionFilter?: Set<DeepDiveSection>;
 
   setData(data?: DeepDiveData): void {
@@ -101,6 +103,11 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
     this.updateRootItems();
   }
 
+  setTeamPins(pins: TeamPin[]): void {
+    this.teamPins = pins;
+    this.updateRootItems();
+  }
+
   setSectionFilter(filter?: Set<DeepDiveSection>): void {
     this.sectionFilter = filter;
     this.updateRootItems();
@@ -108,8 +115,17 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
 
   private updateRootItems(): void {
     const items: DeepDiveItem[] = [];
+
+    // Team Pins section (shown first, above personal pins)
+    if (this.teamPins.length > 0) {
+      const teamPinItem = new DeepDiveItem('Team Pins', 'section');
+      teamPinItem.section = 'teamPinned';
+      items.push(teamPinItem);
+    }
+
+    // Personal pins (renamed from "Pinned" to "Your Pins")
     if (this.pinned.length > 0) {
-      items.push(new DeepDiveItem('Pinned', 'section'));
+      items.push(new DeepDiveItem('Your Pins', 'section'));
     }
 
     if (this.data) {
@@ -146,7 +162,7 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
   }
 
   getChildren(element?: DeepDiveItem): vscode.ProviderResult<DeepDiveItem[]> {
-    if (!this.data && this.pinned.length === 0) {
+    if (!this.data && this.pinned.length === 0 && this.teamPins.length === 0) {
       const hint = new DeepDiveItem('Select a symbol and run Code Coach: Deep Dive', 'hint');
       this.parentMap.set(hint, undefined);
       return [hint];
@@ -156,6 +172,39 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
       return this.rootItems;
     }
 
+    // Team Pins section
+    if (element.section === 'teamPinned') {
+      if (this.teamPins.length === 0) {
+        return [new DeepDiveItem('No team pins yet', 'item')];
+      }
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      const items = this.teamPins.map(pin => {
+        const absolutePath = workspaceFolder
+          ? path.join(workspaceFolder.uri.fsPath, pin.filePath)
+          : pin.filePath;
+        const label = `★ ${pin.symbol}`;
+        const description = `${pin.filePath}:${pin.line}`;
+        const range = new vscode.Range(
+          Math.max(0, pin.line - 1),
+          Math.max(0, pin.character),
+          Math.max(0, pin.line - 1),
+          Math.max(0, pin.character)
+        );
+        const item = new DeepDiveItem(label, 'item', { uri: vscode.Uri.file(absolutePath), range }, description);
+        item.contextValue = 'teamPin';
+        item.tooltip = this.formatTeamPinTooltip(pin);
+        item.command = {
+          command: 'codeCoach.teamPins.open',
+          title: 'Open Team Pin',
+          arguments: [pin.id]
+        };
+        this.parentMap.set(item, element);
+        return item;
+      });
+      return items;
+    }
+
+    // Personal pins section (Your Pins)
     if (element.section === 'pinned') {
       if (this.pinned.length === 0) {
         return [new DeepDiveItem('No pins yet', 'item')];
@@ -288,6 +337,18 @@ export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
 
   getParent(element: DeepDiveItem): vscode.ProviderResult<DeepDiveItem> {
     return this.parentMap.get(element);
+  }
+
+  private formatTeamPinTooltip(pin: TeamPin): vscode.MarkdownString {
+    const md = new vscode.MarkdownString();
+    md.appendMarkdown(`**${pin.symbol}** (${pin.kind})\n\n`);
+    md.appendMarkdown(`*"${pin.annotation}"*\n\n`);
+    md.appendMarkdown(`📍 ${pin.filePath}:${pin.line}\n\n`);
+    if (pin.tags && pin.tags.length > 0) {
+      md.appendMarkdown(`🏷️ ${pin.tags.join(', ')}\n\n`);
+    }
+    md.appendMarkdown(`👤 @${pin.author} • ${new Date(pin.createdAt).toLocaleDateString()}`);
+    return md;
   }
 }
 
