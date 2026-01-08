@@ -175,6 +175,42 @@
       {
         "command": "codeCoach.explainCommit",
         "title": "Code Coach: Explain Commit"
+      },
+      {
+        "command": "codeCoach.tours.browse",
+        "title": "Code Coach: Browse Tours"
+      },
+      {
+        "command": "codeCoach.tours.start",
+        "title": "Code Coach: Start Tour"
+      },
+      {
+        "command": "codeCoach.tours.stop",
+        "title": "Code Coach: Stop Tour"
+      },
+      {
+        "command": "codeCoach.tours.next",
+        "title": "Code Coach: Next Stop"
+      },
+      {
+        "command": "codeCoach.tours.previous",
+        "title": "Code Coach: Previous Stop"
+      },
+      {
+        "command": "codeCoach.tours.showCurrentStop",
+        "title": "Code Coach: Show Current Stop"
+      },
+      {
+        "command": "codeCoach.tours.create",
+        "title": "Code Coach: Create Tour"
+      },
+      {
+        "command": "codeCoach.tours.addStop",
+        "title": "Code Coach: Add Tour Stop"
+      },
+      {
+        "command": "codeCoach.tours.delete",
+        "title": "Code Coach: Delete Tour"
       }
     ],
     "menus": {

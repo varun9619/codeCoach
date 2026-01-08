@@ -28,6 +28,8 @@ import {
   describeSource
 } from './explainDiff';
 import { DiffSource, DEFAULT_EXPLAIN_DIFF_CONFIG } from './diffTypes';
+import { TourManager } from './tours/tourManager';
+import { TourRunner } from './tours/tourRunner';
 import {
   BranchSummary,
   TestGap,
@@ -108,6 +110,18 @@ export function activate(context: vscode.ExtensionContext) {
     teamPinManager.onPinsChanged(() => {
       deepDiveProvider?.setTeamPins(teamPinManager.getAllPins());
     });
+
+    // Initialize TourManager
+    const tourManager = TourManager.getInstance();
+    tourManager.initialize(context).catch(err => {
+      console.error('[Code Coach] TourManager initialization failed:', err);
+    });
+    context.subscriptions.push({ dispose: () => tourManager.dispose() });
+
+    // Initialize TourRunner
+    const tourRunner = TourRunner.getInstance();
+    tourRunner.initialize(context);
+    context.subscriptions.push({ dispose: () => tourRunner.dispose() });
 
     deepDivePins = loadDeepDivePins(context);
     deepDiveProvider.setPinned(deepDivePins);
@@ -1481,6 +1495,210 @@ export function activate(context: vscode.ExtensionContext) {
       outputChannel?.appendLine(markdown);
       outputChannel?.show(true);
       trackEvent('explainDiff', { source: 'commit', filesChanged: diff.stats.filesChanged });
+    })
+  );
+
+  // Onboarding Tours commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codeCoach.tours.browse', async () => {
+      const tours = tourManager.getAllTours();
+
+      outputChannel?.appendLine('');
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.appendLine('Onboarding Tours');
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.appendLine('');
+
+      if (tours.length === 0) {
+        outputChannel?.appendLine('No tours available.');
+        outputChannel?.appendLine('');
+        outputChannel?.appendLine('To create a tour:');
+        outputChannel?.appendLine('1. Run "Code Coach: Create Tour"');
+        outputChannel?.appendLine('2. Add stops with "Code Coach: Add Tour Stop"');
+        outputChannel?.appendLine('3. Commit .code-coach/tours/ to share with your team');
+      } else {
+        for (const item of tours) {
+          const progressText = item.progress
+            ? item.progress.completed
+              ? 'Completed'
+              : `${item.progress.completedStops.length}/${item.tour.stops.length} stops`
+            : 'Not started';
+
+          outputChannel?.appendLine(`[${item.tour.title}]`);
+          outputChannel?.appendLine(`   ${item.tour.description}`);
+          if (item.tour.estimatedMinutes) {
+            outputChannel?.appendLine(`   Time: ~${item.tour.estimatedMinutes} min`);
+          }
+          outputChannel?.appendLine(`   Stops: ${item.tour.stops.length}`);
+          outputChannel?.appendLine(`   Progress: ${progressText}`);
+          outputChannel?.appendLine(`   Author: @${item.tour.author}`);
+          outputChannel?.appendLine('');
+        }
+      }
+
+      outputChannel?.appendLine('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      outputChannel?.show(true);
+      trackEvent('tours.browse');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.tours.start', async (tourId?: string) => {
+      if (!tourId) {
+        const tours = tourManager.getAllTours();
+        if (tours.length === 0) {
+          vscode.window.showInformationMessage('No tours available. Create one first.');
+          return;
+        }
+
+        const items = tours.map(item => ({
+          label: item.tour.title,
+          description: item.progress?.completed ? 'Completed' : item.progress ? 'In Progress' : '',
+          detail: `${item.tour.stops.length} stops • ${item.tour.description}`,
+          tourId: item.tour.id
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: 'Select a tour to start',
+          title: 'Start Tour'
+        });
+
+        if (!selected) return;
+        tourId = selected.tourId;
+      }
+
+      const tour = tourManager.getTour(tourId);
+      if (!tour) {
+        vscode.window.showWarningMessage('Tour not found');
+        return;
+      }
+
+      if (tour.stops.length === 0) {
+        vscode.window.showWarningMessage('This tour has no stops');
+        return;
+      }
+
+      // Check for existing progress
+      const progress = tourManager.getProgress(tourId);
+      let startIndex = 0;
+
+      if (progress && !progress.completed && progress.currentStopIndex > 0) {
+        const result = await vscode.window.showInformationMessage(
+          `Resume "${tour.title}" from stop ${progress.currentStopIndex + 1}?`,
+          'Resume',
+          'Start Over'
+        );
+
+        if (result === 'Resume') {
+          startIndex = progress.currentStopIndex;
+        } else if (result === 'Start Over') {
+          await tourManager.resetProgress(tourId);
+        } else {
+          return; // Cancelled
+        }
+      }
+
+      await tourRunner.start(tour, startIndex);
+      trackEvent('tours.start', { tourId: tour.id, stopsCount: tour.stops.length });
+    }),
+
+    vscode.commands.registerCommand('codeCoach.tours.stop', () => {
+      if (tourRunner.isRunning()) {
+        tourRunner.stop();
+        vscode.window.showInformationMessage('Tour stopped');
+        trackEvent('tours.stop');
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.tours.next', async () => {
+      if (tourRunner.isRunning()) {
+        await tourRunner.next();
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.tours.previous', async () => {
+      if (tourRunner.isRunning()) {
+        await tourRunner.previous();
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.tours.showCurrentStop', async () => {
+      if (tourRunner.isRunning()) {
+        await tourRunner.goToCurrentStop();
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.tours.create', async () => {
+      const tour = await tourManager.createTourWizard();
+      if (tour) {
+        trackEvent('tours.create', { tourId: tour.id });
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.tours.addStop', async (tourId?: string) => {
+      if (!tourId) {
+        const tours = tourManager.getAllTours();
+        if (tours.length === 0) {
+          vscode.window.showInformationMessage('Create a tour first');
+          return;
+        }
+
+        const items = tours.map(item => ({
+          label: item.tour.title,
+          description: `${item.tour.stops.length} stops`,
+          tourId: item.tour.id
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: 'Select a tour to add a stop to',
+          title: 'Add Tour Stop'
+        });
+
+        if (!selected) return;
+        tourId = selected.tourId;
+      }
+
+      const stop = await tourManager.addStopWizard(tourId);
+      if (stop) {
+        trackEvent('tours.addStop', { tourId });
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.tours.delete', async (tourId?: string) => {
+      if (!tourId) {
+        const tours = tourManager.getAllTours();
+        if (tours.length === 0) {
+          vscode.window.showInformationMessage('No tours to delete');
+          return;
+        }
+
+        const items = tours.map(item => ({
+          label: item.tour.title,
+          description: `${item.tour.stops.length} stops`,
+          tourId: item.tour.id
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: 'Select a tour to delete',
+          title: 'Delete Tour'
+        });
+
+        if (!selected) return;
+        tourId = selected.tourId;
+      }
+
+      const tour = tourManager.getTour(tourId);
+      if (!tour) return;
+
+      const confirm = await vscode.window.showWarningMessage(
+        `Delete tour "${tour.title}"? This cannot be undone.`,
+        { modal: true },
+        'Delete'
+      );
+
+      if (confirm === 'Delete') {
+        await tourManager.deleteTour(tourId);
+        vscode.window.showInformationMessage(`Tour "${tour.title}" deleted`);
+        trackEvent('tours.delete', { tourId });
+      }
     })
   );
 
