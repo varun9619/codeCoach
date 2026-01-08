@@ -251,6 +251,30 @@
       {
         "command": "codeCoach.graph.focus",
         "title": "Code Coach: Focus Knowledge Graph on Current File"
+      },
+      {
+        "command": "codeCoach.enterprise.sso.login",
+        "title": "Code Coach: Enterprise SSO Login"
+      },
+      {
+        "command": "codeCoach.enterprise.sso.logout",
+        "title": "Code Coach: Enterprise SSO Logout"
+      },
+      {
+        "command": "codeCoach.enterprise.sso.status",
+        "title": "Code Coach: Enterprise SSO Status"
+      },
+      {
+        "command": "codeCoach.enterprise.endpoints.add",
+        "title": "Code Coach: Add Custom Model Endpoint"
+      },
+      {
+        "command": "codeCoach.enterprise.endpoints.list",
+        "title": "Code Coach: Manage Custom Endpoints"
+      },
+      {
+        "command": "codeCoach.enterprise.endpoints.test",
+        "title": "Code Coach: Test Default Endpoint"
       }
     ],
     "menus": {

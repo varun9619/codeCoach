@@ -49,6 +49,20 @@ extension/src/
 │   ├── workspaceIndex.ts  # Background symbol prewarming for large repos
 │   ├── runtimeTracing.ts  # Debug session exception capture (opt-in)
 │   └── telemetry.ts       # Local-only telemetry logging
+├── Team Intelligence (Phase 2)
+│   ├── templates/         # Explanation templates (Junior Dev, Security Review, etc.)
+│   ├── teamPins.ts        # Team-pinned symbols for onboarding
+│   ├── explainDiff.ts     # Git diff explanations
+│   ├── tours/             # Interactive onboarding tours
+│   ├── subscriptions/     # Code change subscriptions
+│   ├── cache/             # Shared explanation cache
+│   └── graph/             # Team knowledge graph visualization
+├── Enterprise (Phase 4)
+│   ├── enterprise/
+│   │   ├── ssoTypes.ts        # SSO type definitions
+│   │   ├── ssoAuth.ts         # OAuth2/OIDC authentication
+│   │   ├── customEndpointTypes.ts  # Custom endpoint types
+│   │   └── customEndpointManager.ts # Self-hosted model management
 ```
 
 ## Core Flows
@@ -93,6 +107,43 @@ extension/src/
 - JS/TS first; design for future language adapters
 - Avoid adding extra UI beyond Output Channel and hover text unless requested
 - Privacy modes must be respected—never send code externally in offline/local modes
+
+## Phase 2: Team Intelligence Features
+
+| Feature | Command | Description |
+|---------|---------|-------------|
+| **Explanation Templates** | `Code Coach: Explain Selection` | Choose from templates (Junior Dev, Security Review, Performance, etc.) |
+| **Team Pinned Symbols** | Right-click → `Pin for Team` | Mark important symbols for team visibility |
+| **Explain Diff** | `Code Coach: Explain Diff` | Explain git changes in plain English |
+| **Onboarding Tours** | `Code Coach: Create Tour` | Create interactive codebase tours |
+| **Change Subscriptions** | `Code Coach: Subscribe to File Changes` | Get notified when specific files change |
+| **Shared Explanation Cache** | Automatic | Cache AI explanations for team reuse |
+| **Knowledge Graph** | `Code Coach: Show Knowledge Graph` | Visualize codebase dependencies |
+
+## Phase 4: Enterprise Features
+
+| Feature | Command | Description |
+|---------|---------|-------------|
+| **SSO Integration** | `Code Coach: Enterprise SSO Login` | OAuth2/OIDC with Azure AD, Okta, Auth0, Google |
+| **Custom Model Endpoints** | `Code Coach: Add Custom Model Endpoint` | Configure Azure OpenAI, AWS Bedrock, vLLM, etc. |
+| **Endpoint Management** | `Code Coach: Manage Custom Endpoints` | List, test, set default endpoints |
+
+### Supported SSO Providers
+- Microsoft Entra ID (Azure AD)
+- Okta
+- Auth0
+- Google Workspace
+- Custom OIDC
+
+### Supported Custom Endpoints
+- Azure OpenAI Service
+- AWS Bedrock
+- Google Vertex AI
+- vLLM
+- Text Generation Inference (TGI)
+- Ollama
+- OpenAI-compatible APIs
+- Anthropic-compatible APIs
 
 ## Key Settings
 

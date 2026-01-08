@@ -34,6 +34,8 @@ import { SubscriptionManager } from './subscriptions/subscriptionManager';
 import { ChangeDetector } from './subscriptions/changeDetector';
 import { ExplanationCache } from './cache/explanationCache';
 import { GraphPanel } from './graph/graphPanel';
+import { SsoAuthManager, getSsoAuthManager } from './enterprise/ssoAuth';
+import { CustomEndpointManager, getCustomEndpointManager } from './enterprise/customEndpointManager';
 import {
   BranchSummary,
   TestGap,
@@ -1828,6 +1830,157 @@ export function activate(context: vscode.ExtensionContext) {
       } else {
         await GraphPanel.createOrShow(context.extensionUri);
       }
+    })
+  );
+
+  // Enterprise: SSO Integration
+  const ssoManager = getSsoAuthManager();
+  ssoManager.initialize(context).catch(err => {
+    console.error('[Code Coach] SSO Manager initialization failed:', err);
+  });
+  context.subscriptions.push({ dispose: () => ssoManager.dispose() });
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codeCoach.enterprise.sso.login', async () => {
+      const config = await ssoManager.showConfigWizard();
+      if (config) {
+        try {
+          const session = await ssoManager.login(config);
+          vscode.window.showInformationMessage(
+            `Signed in as ${session.user.name} (${session.user.email})`
+          );
+          trackEvent('enterprise.sso.login', { provider: config.provider });
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `SSO login failed: ${err instanceof Error ? err.message : 'Unknown error'}`
+          );
+        }
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.enterprise.sso.logout', async () => {
+      await ssoManager.logout();
+      trackEvent('enterprise.sso.logout');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.enterprise.sso.status', async () => {
+      const state = ssoManager.getAuthState();
+      if (state.status === 'authenticated') {
+        const session = state.session;
+        vscode.window.showInformationMessage(
+          `Signed in as ${session.user.name} (${session.user.email})` +
+          (session.user.organization ? ` | Org: ${session.user.organization}` : '')
+        );
+      } else if (state.status === 'expired') {
+        vscode.window.showWarningMessage('SSO session expired. Please sign in again.');
+      } else {
+        vscode.window.showInformationMessage('Not signed in. Use "Code Coach: Enterprise SSO Login" to sign in.');
+      }
+    })
+  );
+
+  // Enterprise: Custom Model Endpoints
+  const endpointManager = getCustomEndpointManager();
+  endpointManager.initialize(context).catch(err => {
+    console.error('[Code Coach] Endpoint Manager initialization failed:', err);
+  });
+  context.subscriptions.push({ dispose: () => endpointManager.dispose() });
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codeCoach.enterprise.endpoints.add', async () => {
+      await endpointManager.showAddEndpointWizard();
+      trackEvent('enterprise.endpoints.add');
+    }),
+
+    vscode.commands.registerCommand('codeCoach.enterprise.endpoints.list', async () => {
+      const endpoints = endpointManager.getEndpoints();
+      if (endpoints.length === 0) {
+        const action = await vscode.window.showInformationMessage(
+          'No custom endpoints configured.',
+          'Add Endpoint'
+        );
+        if (action === 'Add Endpoint') {
+          await endpointManager.showAddEndpointWizard();
+        }
+        return;
+      }
+
+      const items = endpoints.map(ep => {
+        const health = endpointManager.getHealth(ep.id);
+        const healthIcon = health?.status === 'healthy' ? '$(pass)' :
+                          health?.status === 'unhealthy' ? '$(error)' : '$(question)';
+        return {
+          label: `${healthIcon} ${ep.name}`,
+          description: ep.type,
+          detail: ep.baseUrl,
+          endpoint: ep
+        };
+      });
+
+      const selected = await vscode.window.showQuickPick(items, {
+        title: 'Custom Model Endpoints',
+        placeHolder: 'Select an endpoint to manage'
+      });
+
+      if (selected) {
+        const action = await vscode.window.showQuickPick(
+          [
+            { label: '$(play) Test Connection', value: 'test' },
+            { label: '$(star) Set as Default', value: 'default' },
+            { label: '$(trash) Remove', value: 'remove' }
+          ],
+          { title: `Manage: ${selected.endpoint.name}` }
+        );
+
+        if (action?.value === 'test') {
+          const result = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'Testing endpoint...' },
+            () => endpointManager.testEndpoint(selected.endpoint.id)
+          );
+          if (result.success) {
+            vscode.window.showInformationMessage(
+              `Connection successful! Latency: ${result.latencyMs}ms`
+            );
+          } else {
+            vscode.window.showErrorMessage(`Connection failed: ${result.error}`);
+          }
+        } else if (action?.value === 'default') {
+          await endpointManager.setDefaultEndpoint(selected.endpoint.id);
+          vscode.window.showInformationMessage(`${selected.endpoint.name} is now the default endpoint.`);
+        } else if (action?.value === 'remove') {
+          const confirm = await vscode.window.showWarningMessage(
+            `Remove endpoint "${selected.endpoint.name}"?`,
+            { modal: true },
+            'Remove'
+          );
+          if (confirm === 'Remove') {
+            await endpointManager.removeEndpoint(selected.endpoint.id);
+            vscode.window.showInformationMessage('Endpoint removed.');
+          }
+        }
+      }
+    }),
+
+    vscode.commands.registerCommand('codeCoach.enterprise.endpoints.test', async () => {
+      const defaultEndpoint = endpointManager.getDefaultEndpoint();
+      if (!defaultEndpoint) {
+        vscode.window.showWarningMessage('No default endpoint configured.');
+        return;
+      }
+
+      const result = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `Testing ${defaultEndpoint.name}...` },
+        () => endpointManager.testEndpoint(defaultEndpoint.id)
+      );
+
+      if (result.success) {
+        vscode.window.showInformationMessage(
+          `${defaultEndpoint.name}: Connection successful! Latency: ${result.latencyMs}ms`
+        );
+      } else {
+        vscode.window.showErrorMessage(`${defaultEndpoint.name}: ${result.error}`);
+      }
+      trackEvent('enterprise.endpoints.test', { success: result.success });
     })
   );
 
