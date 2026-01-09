@@ -1,118 +1,387 @@
-# Code Coach (VS Code Extension)
+# Code Coach VS Code Extension
 
-A minimal static-only MVP that helps you understand code and diagnostics.
+A VS Code extension that explains code you didn't write. Provides plain-English explanations, debugging guidance, team collaboration features, and enterprise integrations.
 
-## MVP features
+## Features Overview
 
-- **Explain Selection**: highlight code and get a line-by-line plain-English walkthrough.
-- **Explain Why This Works**: summarize assumptions, edge cases, and what could break (AI when enabled).
-- **Explain Diagnostic**: hover on a VS Code diagnostic to see a plain-English explanation + likely causes + fixes.
-- **Diagnostic Quick Fixes**: lightbulb offers optional chaining / non-null assertion / implicit-any fixes where safe.
-- **Trace Diagnostic Origin**: trace a diagnostic back to its enclosing symbol and likely callers.
-- **Trace Stack Trace**: paste a stack trace and see a linked call chain.
-- **Show Code Smells**: run a static analysis pass for common performance/maintainability issues (JS/TS + basic Python/Java heuristics).
-- **Test Gap Finder**: uses coverage files (`lcov.info` or `coverage-final.json`) to highlight uncovered branches and suggest test inputs.
-- **Deep Dive**: open a sidebar panel with symbol overview, usages, blame, history, tests (heuristic), coverage, and AI summary (if enabled).
-  - Pin important symbols, filter visible sections, and export a report.
-- **Smell CodeLens + Quick Fixes**: shows smell counts per function and offers safe quick fixes for certain smells.
-- **Test Gap CodeLens + Quick Fixes**: shows branch coverage per function and offers test stub actions for gaps.
-- **Coach Mode (inline hints)**: optional inlay hints that annotate lines with quick explanations.
+### Core Features (Static + AI)
+- **Explain Selection**: Line-by-line code explanations with citations
+- **Explain Why This Works**: Assumptions, edge cases, and breakpoints
+- **Explain Diagnostic**: Plain-English error explanations with fixes
+- **Trace Diagnostic Origin**: Find root causes through call chains
+- **Deep Dive**: Comprehensive symbol analysis (usages, blame, tests)
+- **Code Smells**: Detect and fix quality issues
+- **Test Gap Finder**: Find untested code branches
+- **Coach Mode**: Inline explanatory hints
 
-## AI (optional)
+### Team Intelligence (Phase 2)
+- **Explanation Templates**: Junior Dev, Security, Performance, etc.
+- **Team Pinned Symbols**: Mark important code for team visibility
+- **Explain Diff**: Git change explanations
+- **Onboarding Tours**: Interactive codebase tours
+- **Change Subscriptions**: Notifications when files change
+- **Shared Cache**: Team-wide explanation caching
+- **Knowledge Graph**: Visual dependency map
 
-This extension can store API keys securely (VS Code Secret Storage) and supports OpenRouter, OpenAI, Anthropic, Gemini, plus local providers (Ollama, LM Studio). OpenRouter is the default provider.
+### Enterprise (Phase 4)
+- **SSO Integration**: Azure AD, Okta, Auth0, Google, Custom OIDC
+- **Custom Endpoints**: Azure OpenAI, AWS Bedrock, vLLM, TGI, etc.
 
-- Command Palette → **Code Coach: Set AI API Key**
-- Command Palette → **Code Coach: Clear AI API Key**
+---
 
-Settings:
+## All Commands
 
-- `codeCoach.ai.enabled` (default: false)
-- `codeCoach.ai.provider` (openrouter | openai | anthropic | gemini | ollama | lmstudio)
-- `codeCoach.ai.baseUrl` (override provider default)
-- `codeCoach.ai.endpointPath` (override provider default; supports `{model}` placeholder)
-- `codeCoach.ai.model` (override provider default)
-- `codeCoach.ai.authHeader` / `codeCoach.ai.authScheme` (override auth header/scheme)
-- `codeCoach.ai.temperature` / `codeCoach.ai.maxTokens`
-- `codeCoach.ai.openrouter.referer` / `codeCoach.ai.openrouter.title` (optional headers)
-- `codeCoach.ai.promptOptimizerMode` (strict | balanced | compact)
-- `codeCoach.ai.strictJson` (enforce JSON-only responses; uses provider JSON mode when supported)
-- Privacy:
-  - `codeCoach.privacy.mode` (offline | local | redacted | full)
-  - `codeCoach.privacy.allowedDomains`
-  - `codeCoach.privacy.redactPatterns`
-  - `codeCoach.privacy.maxContextChars`
-- UI surfaces:
-  - `codeCoach.ui.explainSelection`
-  - `codeCoach.ui.explainWhyWorks`
-  - `codeCoach.ui.explainDiagnostic`
-  - `codeCoach.ui.traceDiagnosticOrigin`
-  - `codeCoach.ui.runtimeException`
-  - `codeCoach.ui.codeSmells`
-  - `codeCoach.ui.testGaps`
-  (values: `output`, `panel`, or `peek`; peek renders a Markdown-styled view)
-- Coach Mode:
-  - `codeCoach.coachMode.enabled`
-  - `codeCoach.coachMode.maxHints`
-- Telemetry (local only):
-  - `codeCoach.telemetry.enabled`
-- Enterprise controls:
-  - `codeCoach.enterprise.allowedAiProviders`
-  - `codeCoach.enterprise.auditLogPath`
-- Test gaps:
-  - `codeCoach.testGaps.coveragePaths`
-- Deep Dive:
-  - `codeCoach.deepDive.sections`
-  - `codeCoach.deepDive.aiSummary`
-  - `codeCoach.deepDive.historyLimit`
-- Performance:
-  - `codeCoach.performance.prewarmSymbols`
-  - `codeCoach.performance.prewarmFileLimit`
-  - `codeCoach.performance.prewarmDelayMs`
-  - `codeCoach.performance.prewarmGlob`
-  - `codeCoach.performance.prewarmExclude`
+### Core Commands
 
-AI citation behavior:
-- AI explanations are asked to include line citations (e.g., `src/file.ts:42` or `L42`).
-- For selections, citations are verified to be within the selected line range. Verification notes appear if mismatched.
-- Panel views link file:line citations so you can jump directly to code.
+| Command | Description |
+|---------|-------------|
+| `Code Coach: Explain Selection` | Explain highlighted code |
+| `Code Coach: Explain Why This Works` | Analyze assumptions and edge cases |
+| `Code Coach: Explain Diagnostic` | Explain error under cursor |
+| `Code Coach: Trace Diagnostic Origin` | Find root cause of error |
+| `Code Coach: Trace Stack Trace` | Parse and link stack trace |
+| `Code Coach: Deep Dive` | Full symbol analysis |
+| `Code Coach: Show Code Smells` | Run smell detection |
+| `Code Coach: Show Test Gaps` | Find untested branches |
+| `Code Coach: Run Onboarding` | Replay first-run walkthrough |
 
-Prompt optimizer layer:
-- User inputs are automatically structured into an "objective / constraints / evidence / output" format before hitting the LLM.
-- This improves consistency across providers and makes outputs easier to verify.
-- `codeCoach.ai.promptOptimizer` toggles the optimizer layer.
-- `codeCoach.ai.promptDebug` shows the optimized prompt in a separate output channel.
-- `codeCoach.ai.strictJson` requires JSON-only responses; otherwise AI falls back to static explanations.
+### Deep Dive Commands
 
-## Usage
+| Command | Description |
+|---------|-------------|
+| `Code Coach: Pin Deep Dive` | Pin current symbol |
+| `Code Coach: Unpin Deep Dive` | Remove pin |
+| `Code Coach: Deep Dive Sections` | Filter visible sections |
+| `Code Coach: Export Deep Dive` | Export as markdown |
 
-- Select code → Command Palette → **Code Coach: Explain Selection**
-- Select code → Command Palette → **Code Coach: Explain Why This Works**
-- Hover over an error underline → see the **Code Coach** hover
-- Command Palette → **Code Coach: Explain Diagnostic** (uses the diagnostic under your cursor, else the first in the file)
-- Command Palette → **Code Coach: Trace Diagnostic Origin**
-- Command Palette → **Code Coach: Trace Stack Trace**
-- Command Palette → **Code Coach: Show Code Smells**
-- Command Palette → **Code Coach: Show Test Gaps**
-- Command Palette → **Code Coach: Deep Dive** (uses the symbol under your cursor)
-- Command Palette → **Code Coach: Run Onboarding** (replay the guided walkthrough)
-- Command Palette → **Code Coach: Pin Deep Dive** / **Unpin Deep Dive**
-- Command Palette → **Code Coach: Deep Dive Sections**
-- Command Palette → **Code Coach: Export Deep Dive**
-- Command Palette → **Code Coach: Feedback (Helpful/Not Helpful)**
-- Toggle Coach Mode → Settings: `codeCoach.coachMode.enabled`
+### AI Commands
+
+| Command | Description |
+|---------|-------------|
+| `Code Coach: Set AI API Key` | Store API key securely |
+| `Code Coach: Clear AI API Key` | Remove stored key |
+
+### Team Intelligence Commands
+
+| Command | Description |
+|---------|-------------|
+| `Code Coach: Explain Diff` | Explain git changes |
+| `Code Coach: Show Team Pins` | View all team pins |
+| `Code Coach: Create Tour` | Start new onboarding tour |
+| `Code Coach: Add Tour Stop` | Add stop to current tour |
+| `Code Coach: Start Tour` | Run an existing tour |
+| `Code Coach: Subscribe to File Changes` | Watch for changes |
+| `Code Coach: Manage Subscriptions` | View/edit subscriptions |
+| `Code Coach: Show Cache Statistics` | View cache stats |
+| `Code Coach: Clear Explanation Cache` | Clear cached explanations |
+| `Code Coach: Show Knowledge Graph` | Open dependency graph |
+| `Code Coach: Focus Knowledge Graph on Current File` | Focus on current file |
+
+### Enterprise Commands
+
+| Command | Description |
+|---------|-------------|
+| `Code Coach: Enterprise SSO Login` | Authenticate with IdP |
+| `Code Coach: Enterprise SSO Logout` | Sign out |
+| `Code Coach: Enterprise SSO Status` | Check auth status |
+| `Code Coach: Add Custom Model Endpoint` | Configure self-hosted AI |
+| `Code Coach: Manage Custom Endpoints` | List/test/remove endpoints |
+| `Code Coach: Test Default Endpoint` | Quick test default endpoint |
+
+### Utility Commands
+
+| Command | Description |
+|---------|-------------|
+| `Code Coach: Feedback (Helpful/Not Helpful)` | Rate explanations |
+| `Code Coach: Create Config` | Generate config file |
+| `Code Coach: Validate Config` | Check config for errors |
+| `Code Coach: Show Resolved Config` | See merged config |
+
+---
+
+## All Settings
+
+### AI Configuration
+
+```jsonc
+{
+  // Enable AI features (default: false)
+  "codeCoach.ai.enabled": false,
+
+  // AI provider: openrouter | openai | anthropic | gemini | ollama | lmstudio
+  "codeCoach.ai.provider": "openrouter",
+
+  // Override provider's default model
+  "codeCoach.ai.model": "",
+
+  // Override base URL
+  "codeCoach.ai.baseUrl": "",
+
+  // Override endpoint path (supports {model} placeholder)
+  "codeCoach.ai.endpointPath": "",
+
+  // Temperature: 0 (deterministic) to 2 (creative)
+  "codeCoach.ai.temperature": 0.2,
+
+  // Maximum response tokens
+  "codeCoach.ai.maxTokens": 800,
+
+  // Response style: concise | detailed
+  "codeCoach.ai.responseStyle": "concise",
+
+  // Enable prompt optimizer (structures prompts for better results)
+  "codeCoach.ai.promptOptimizer": true,
+
+  // Optimizer mode: strict | balanced | compact
+  "codeCoach.ai.promptOptimizerMode": "strict",
+
+  // Show optimized prompts in debug output
+  "codeCoach.ai.promptDebug": false,
+
+  // Require JSON-only responses (uses provider's JSON mode)
+  "codeCoach.ai.strictJson": false,
+
+  // Override auth header name
+  "codeCoach.ai.authHeader": "",
+
+  // Override auth scheme (e.g., "Bearer")
+  "codeCoach.ai.authScheme": "",
+
+  // Additional headers to send
+  "codeCoach.ai.extraHeaders": {},
+
+  // OpenRouter-specific headers
+  "codeCoach.ai.openrouter.referer": "",
+  "codeCoach.ai.openrouter.title": ""
+}
+```
+
+### Privacy Configuration
+
+```jsonc
+{
+  // Privacy mode: offline | local | redacted | full
+  "codeCoach.privacy.mode": "offline",
+
+  // Allowed API domains (when mode is redacted/full)
+  "codeCoach.privacy.allowedDomains": [],
+
+  // Patterns to strip before sending (regex)
+  "codeCoach.privacy.redactPatterns": [
+    "API_KEY=.*",
+    "SECRET=.*",
+    "PASSWORD=.*"
+  ],
+
+  // Maximum context characters to send
+  "codeCoach.privacy.maxContextChars": 4000
+}
+```
+
+### UI Configuration
+
+```jsonc
+{
+  // Output surface for each command: output | panel | peek
+  "codeCoach.ui.explainSelection": "output",
+  "codeCoach.ui.explainWhyWorks": "output",
+  "codeCoach.ui.explainDiagnostic": "output",
+  "codeCoach.ui.traceDiagnosticOrigin": "output",
+  "codeCoach.ui.runtimeException": "output",
+  "codeCoach.ui.codeSmells": "output",
+  "codeCoach.ui.testGaps": "output"
+}
+```
+
+### Deep Dive Configuration
+
+```jsonc
+{
+  // Visible sections: overview, usages, blame, history, tests, coverage, summary
+  "codeCoach.deepDive.sections": ["overview", "usages", "blame", "history", "tests", "coverage", "summary"],
+
+  // Include AI summary (requires AI enabled)
+  "codeCoach.deepDive.aiSummary": true,
+
+  // Max commits to show in history
+  "codeCoach.deepDive.historyLimit": 10
+}
+```
+
+### Template Configuration
+
+```jsonc
+{
+  // Default template ID
+  "codeCoach.templates.default": "general",
+
+  // Show template picker on explain
+  "codeCoach.templates.showPicker": true,
+
+  // Path to custom templates directory
+  "codeCoach.templates.customTemplatesPath": "",
+
+  // Number of recent templates to track
+  "codeCoach.templates.maxRecentTemplates": 5
+}
+```
+
+### Coach Mode Configuration
+
+```jsonc
+{
+  // Enable inline hints
+  "codeCoach.coachMode.enabled": false,
+
+  // Maximum hints per file
+  "codeCoach.coachMode.maxHints": 50
+}
+```
+
+### Performance Configuration
+
+```jsonc
+{
+  // Enable background symbol warming
+  "codeCoach.performance.prewarmSymbols": false,
+
+  // Maximum files to prewarm
+  "codeCoach.performance.prewarmFileLimit": 200,
+
+  // Delay before starting prewarm (ms)
+  "codeCoach.performance.prewarmDelayMs": 5000,
+
+  // Glob patterns for files to prewarm
+  "codeCoach.performance.prewarmGlob": ["src/**/*.ts", "src/**/*.tsx"],
+
+  // Glob pattern to exclude
+  "codeCoach.performance.prewarmExclude": "**/node_modules/**"
+}
+```
+
+### Test Gaps Configuration
+
+```jsonc
+{
+  // Paths to search for coverage files
+  "codeCoach.testGaps.coveragePaths": [
+    "coverage/lcov.info",
+    "coverage/coverage-final.json"
+  ]
+}
+```
+
+### Enterprise Configuration
+
+```jsonc
+{
+  // Allowed AI providers (empty = all allowed)
+  "codeCoach.enterprise.allowedAiProviders": [],
+
+  // Path for audit log file
+  "codeCoach.enterprise.auditLogPath": ""
+}
+```
+
+### Runtime & Telemetry
+
+```jsonc
+{
+  // Enable debug session exception capture
+  "codeCoach.runtime.enabled": false,
+
+  // Auto-explain caught exceptions
+  "codeCoach.runtime.autoExplainOnException": false,
+
+  // Max variables to capture per exception
+  "codeCoach.runtime.maxVariables": 10,
+
+  // Enable local-only telemetry
+  "codeCoach.telemetry.enabled": false
+}
+```
+
+---
+
+## Context Menu Actions
+
+Right-click in the editor to access:
+
+| Menu Item | When Available |
+|-----------|----------------|
+| **Code Coach: Explain Selection** | When text is selected |
+| **Code Coach: Explain Why This Works** | When text is selected |
+| **Code Coach: Deep Dive** | Always (uses cursor position) |
+| **Pin for Team** | Always (uses cursor position) |
+
+---
+
+## Team-Shareable Files
+
+Code Coach stores team data in `.code-coach/` (add to git):
+
+| File | Purpose |
+|------|---------|
+| `config.json` | Shared settings |
+| `pins.json` | Team-pinned symbols |
+| `tours/*.json` | Onboarding tours |
+| `templates/*.md` | Custom explanation templates |
+| `subscriptions.json` | Change subscriptions |
+| `cache/explanations.json` | Shared AI cache |
+| `endpoints.json` | Custom AI endpoints |
+
+---
 
 ## Development
 
 ```bash
 npm install
 npm run compile
+npm run watch  # For development
+npm run lint   # Check code style
 ```
 
-Run the extension:
+Press `F5` to launch the Extension Host.
 
-- Press `F5` in VS Code (uses the extension host launch config).
+---
 
-## Notes
+## Architecture
 
-This MVP is primarily static-only; optional runtime capture is available when debugging is enabled. AI requests respect `codeCoach.privacy.mode` (offline blocks AI).
+```
+src/
+├── extension.ts           # Entry point
+├── AI Layer
+│   ├── aiClient.ts        # Multi-provider integration
+│   ├── aiSettings.ts      # API key management
+│   ├── aiTypes.ts         # Request/response types
+│   ├── aiVerify.ts        # Citation verification
+│   └── promptOptimizer.ts # Prompt structuring
+├── Core Analysis
+│   ├── explainSelection.ts
+│   ├── explainDiagnostics.ts
+│   ├── smells.ts
+│   └── testGaps.ts
+├── UI Providers
+│   ├── deepDive.ts
+│   ├── coachMode.ts
+│   └── *Providers.ts
+├── Team Intelligence
+│   ├── templates/
+│   ├── teamPins.ts
+│   ├── explainDiff.ts
+│   ├── tours/
+│   ├── subscriptions/
+│   ├── cache/
+│   └── graph/
+└── Enterprise
+    ├── ssoAuth.ts
+    ├── ssoTypes.ts
+    ├── customEndpointManager.ts
+    └── customEndpointTypes.ts
+```
+
+---
+
+## License
+
+MIT
