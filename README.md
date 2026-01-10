@@ -654,7 +654,7 @@ Enable symbol prewarming for large repos:
 
 ## Development
 
-### Building
+### Building the Extension
 
 ```bash
 cd extension
@@ -663,9 +663,39 @@ npm run compile
 npm run watch  # For development
 ```
 
-### Running
+### Running the Extension
 
 Press `F5` in VS Code to launch the Extension Host.
+
+### Running the Documentation Website
+
+The documentation website is built with [Astro Starlight](https://starlight.astro.build/).
+
+```bash
+# Navigate to the website directory
+cd website
+
+# Install dependencies (use yarn since npm has cache issues)
+npx yarn install
+
+# Start the development server
+npx yarn dev
+```
+
+The website will be available at **http://localhost:4321/**
+
+**Website structure:**
+- Landing page with features and pricing
+- 28 documentation pages covering all features
+- Built-in search (powered by Pagefind)
+- Dark/light mode toggle
+
+**Building for production:**
+```bash
+cd website
+npx yarn build    # Outputs to website/dist/
+npx yarn preview  # Preview the production build
+```
 
 ### Testing
 
