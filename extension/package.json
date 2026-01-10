@@ -11,12 +11,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:codeCoach.explainSelection",
-    "onCommand:codeCoach.explainDiagnostic",
-    "onLanguage:javascript",
-    "onLanguage:typescript",
-    "onLanguage:javascriptreact",
-    "onLanguage:typescriptreact"
+    "*"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -24,6 +19,10 @@
       {
         "command": "codeCoach.explainSelection",
         "title": "Code Coach: Explain Selection"
+      },
+      {
+        "command": "codeCoach.explainWhyWorks",
+        "title": "Code Coach: Explain Why This Works"
       },
       {
         "command": "codeCoach.explainDiagnostic",
@@ -38,8 +37,24 @@
         "title": "Code Coach: Trace Diagnostic Origin"
       },
       {
+        "command": "codeCoach.traceStackTrace",
+        "title": "Code Coach: Trace Stack Trace"
+      },
+      {
         "command": "codeCoach.showSmells",
         "title": "Code Coach: Show Code Smells"
+      },
+      {
+        "command": "codeCoach.showTestGaps",
+        "title": "Code Coach: Show Test Gaps"
+      },
+      {
+        "command": "codeCoach.applyDiagnosticFix",
+        "title": "Code Coach: Apply Diagnostic Fix"
+      },
+      {
+        "command": "codeCoach.previewSmellFix",
+        "title": "Code Coach: Preview Smell Fix"
       },
       {
         "command": "codeCoach.ai.setApiKey",
@@ -48,14 +63,312 @@
       {
         "command": "codeCoach.ai.clearApiKey",
         "title": "Code Coach: Clear AI API Key"
+      },
+      {
+        "command": "codeCoach.generateTestStub",
+        "title": "Code Coach: Generate Test Stub"
+      },
+      {
+        "command": "codeCoach.deepDive",
+        "title": "Code Coach: Deep Dive"
+      },
+      {
+        "command": "codeCoach.deepDive.pinCurrent",
+        "title": "Code Coach: Pin Deep Dive"
+      },
+      {
+        "command": "codeCoach.deepDive.unpin",
+        "title": "Code Coach: Unpin Deep Dive"
+      },
+      {
+        "command": "codeCoach.deepDive.filterSections",
+        "title": "Code Coach: Deep Dive Sections"
+      },
+      {
+        "command": "codeCoach.deepDive.export",
+        "title": "Code Coach: Export Deep Dive"
+      },
+      {
+        "command": "codeCoach.deepDive.openPinned",
+        "title": "Code Coach: Open Pinned Deep Dive"
+      },
+      {
+        "command": "codeCoach.onboarding.run",
+        "title": "Code Coach: Run Onboarding"
+      },
+      {
+        "command": "codeCoach.feedback.helpful",
+        "title": "Code Coach: Feedback (Helpful)"
+      },
+      {
+        "command": "codeCoach.feedback.notHelpful",
+        "title": "Code Coach: Feedback (Not Helpful)"
+      },
+      {
+        "command": "codeCoach.config.init",
+        "title": "Code Coach: Init Config"
+      },
+      {
+        "command": "codeCoach.config.openProject",
+        "title": "Code Coach: Open Project Config"
+      },
+      {
+        "command": "codeCoach.config.openGlobal",
+        "title": "Code Coach: Open Global Config"
+      },
+      {
+        "command": "codeCoach.config.resetProject",
+        "title": "Code Coach: Reset Project Config"
+      },
+      {
+        "command": "codeCoach.config.showResolved",
+        "title": "Code Coach: Show Resolved Config"
+      },
+      {
+        "command": "codeCoach.config.validate",
+        "title": "Code Coach: Validate Config"
+      },
+      {
+        "command": "codeCoach.templates.select",
+        "title": "Code Coach: Select Explanation Template"
+      },
+      {
+        "command": "codeCoach.templates.create",
+        "title": "Code Coach: Create Custom Template"
+      },
+      {
+        "command": "codeCoach.templates.setDefault",
+        "title": "Code Coach: Set Default Template"
+      },
+      {
+        "command": "codeCoach.templates.browse",
+        "title": "Code Coach: Browse Templates"
+      },
+      {
+        "command": "codeCoach.teamPins.add",
+        "title": "Code Coach: Pin Symbol for Team"
+      },
+      {
+        "command": "codeCoach.teamPins.remove",
+        "title": "Code Coach: Remove Team Pin"
+      },
+      {
+        "command": "codeCoach.teamPins.open",
+        "title": "Code Coach: Open Team Pin"
+      },
+      {
+        "command": "codeCoach.teamPins.browse",
+        "title": "Code Coach: Browse Team Pins"
+      },
+      {
+        "command": "codeCoach.teamPins.editAnnotation",
+        "title": "Code Coach: Edit Team Pin Annotation"
+      },
+      {
+        "command": "codeCoach.explainDiff",
+        "title": "Code Coach: Explain Diff"
+      },
+      {
+        "command": "codeCoach.explainDiffStaged",
+        "title": "Code Coach: Explain Staged Changes"
+      },
+      {
+        "command": "codeCoach.explainCommit",
+        "title": "Code Coach: Explain Commit"
+      },
+      {
+        "command": "codeCoach.tours.browse",
+        "title": "Code Coach: Browse Tours"
+      },
+      {
+        "command": "codeCoach.tours.start",
+        "title": "Code Coach: Start Tour"
+      },
+      {
+        "command": "codeCoach.tours.stop",
+        "title": "Code Coach: Stop Tour"
+      },
+      {
+        "command": "codeCoach.tours.next",
+        "title": "Code Coach: Next Stop"
+      },
+      {
+        "command": "codeCoach.tours.previous",
+        "title": "Code Coach: Previous Stop"
+      },
+      {
+        "command": "codeCoach.tours.showCurrentStop",
+        "title": "Code Coach: Show Current Stop"
+      },
+      {
+        "command": "codeCoach.tours.create",
+        "title": "Code Coach: Create Tour"
+      },
+      {
+        "command": "codeCoach.tours.addStop",
+        "title": "Code Coach: Add Tour Stop"
+      },
+      {
+        "command": "codeCoach.tours.delete",
+        "title": "Code Coach: Delete Tour"
+      },
+      {
+        "command": "codeCoach.subscriptions.addFile",
+        "title": "Code Coach: Subscribe to File"
+      },
+      {
+        "command": "codeCoach.subscriptions.addSymbol",
+        "title": "Code Coach: Subscribe to Symbol"
+      },
+      {
+        "command": "codeCoach.subscriptions.manage",
+        "title": "Code Coach: Manage Subscriptions"
+      },
+      {
+        "command": "codeCoach.subscriptions.checkChanges",
+        "title": "Code Coach: Check for Changes"
+      },
+      {
+        "command": "codeCoach.subscriptions.browse",
+        "title": "Code Coach: Browse Subscriptions"
+      },
+      {
+        "command": "codeCoach.cache.manage",
+        "title": "Code Coach: Manage Explanation Cache"
+      },
+      {
+        "command": "codeCoach.cache.clear",
+        "title": "Code Coach: Clear Explanation Cache"
+      },
+      {
+        "command": "codeCoach.cache.stats",
+        "title": "Code Coach: Show Cache Statistics"
+      },
+      {
+        "command": "codeCoach.graph.show",
+        "title": "Code Coach: Show Knowledge Graph"
+      },
+      {
+        "command": "codeCoach.graph.focus",
+        "title": "Code Coach: Focus Knowledge Graph on Current File"
+      },
+      {
+        "command": "codeCoach.enterprise.sso.login",
+        "title": "Code Coach: Enterprise SSO Login"
+      },
+      {
+        "command": "codeCoach.enterprise.sso.logout",
+        "title": "Code Coach: Enterprise SSO Logout"
+      },
+      {
+        "command": "codeCoach.enterprise.sso.status",
+        "title": "Code Coach: Enterprise SSO Status"
+      },
+      {
+        "command": "codeCoach.enterprise.endpoints.add",
+        "title": "Code Coach: Add Custom Model Endpoint"
+      },
+      {
+        "command": "codeCoach.enterprise.endpoints.list",
+        "title": "Code Coach: Manage Custom Endpoints"
+      },
+      {
+        "command": "codeCoach.enterprise.endpoints.test",
+        "title": "Code Coach: Test Default Endpoint"
       }
     ],
     "menus": {
       "editor/context": [
         {
           "command": "codeCoach.explainSelection",
-          "when": "editorHasSelection && (editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact)",
+          "when": "editorHasSelection && (editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust)",
           "group": "navigation@50"
+        },
+        {
+          "command": "codeCoach.explainWhyWorks",
+          "when": "editorHasSelection && (editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust)",
+          "group": "navigation@50"
+        },
+        {
+          "command": "codeCoach.deepDive",
+          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
+          "group": "navigation@51"
+        },
+        {
+          "command": "codeCoach.teamPins.add",
+          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
+          "group": "navigation@52"
+        },
+        {
+          "command": "codeCoach.subscriptions.addFile",
+          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
+          "group": "navigation@53"
+        },
+        {
+          "command": "codeCoach.subscriptions.addSymbol",
+          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == java || editorLangId == go || editorLangId == rust",
+          "group": "navigation@54"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "codeCoach.deepDive.pinCurrent",
+          "when": "view == codeCoach.deepDive",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codeCoach.deepDive.unpin",
+          "when": "view == codeCoach.deepDive",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codeCoach.deepDive.filterSections",
+          "when": "view == codeCoach.deepDive",
+          "group": "navigation@3"
+        },
+        {
+          "command": "codeCoach.deepDive.export",
+          "when": "view == codeCoach.deepDive",
+          "group": "navigation@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "codeCoach.deepDive.openPinned",
+          "when": "view == codeCoach.deepDive && viewItem == deepDivePin",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codeCoach.deepDive.unpin",
+          "when": "view == codeCoach.deepDive && viewItem == deepDivePin",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codeCoach.teamPins.open",
+          "when": "view == codeCoach.deepDive && viewItem == teamPin",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codeCoach.teamPins.editAnnotation",
+          "when": "view == codeCoach.deepDive && viewItem == teamPin",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codeCoach.teamPins.remove",
+          "when": "view == codeCoach.deepDive && viewItem == teamPin",
+          "group": "navigation@3"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "codeCoach.explainDiff",
+          "group": "navigation@100",
+          "when": "scmProvider == git"
+        },
+        {
+          "command": "codeCoach.explainDiffStaged",
+          "group": "navigation@101",
+          "when": "scmProvider == git"
         }
       ]
     },
@@ -75,20 +388,33 @@
           "default": false,
           "description": "Enable AI-assisted explanations (uses your configured endpoint and stored API key)."
         },
+        "codeCoach.ai.provider": {
+          "type": "string",
+          "enum": [
+            "openrouter",
+            "openai",
+            "anthropic",
+            "gemini",
+            "ollama",
+            "lmstudio"
+          ],
+          "default": "openrouter",
+          "description": "AI provider used for Code Coach requests."
+        },
         "codeCoach.ai.baseUrl": {
           "type": "string",
           "default": "",
-          "description": "Base URL for your AI endpoint (example: https://api.example.com). Leave empty to disable requests."
+          "description": "Override the base URL for the selected provider. Leave empty to use the default."
         },
         "codeCoach.ai.endpointPath": {
           "type": "string",
-          "default": "/chat/completions",
-          "description": "Endpoint path appended to baseUrl. For OpenAI-compatible APIs this is often /chat/completions (or /responses)."
+          "default": "",
+          "description": "Override the endpoint path for the selected provider. Supports {model} placeholder."
         },
         "codeCoach.ai.model": {
           "type": "string",
           "default": "",
-          "description": "Model/deployment identifier required by your endpoint. Leave empty to disable AI calls."
+          "description": "Override the model/deployment identifier for the selected provider."
         },
         "codeCoach.ai.responseStyle": {
           "type": "string",
@@ -101,13 +427,95 @@
         },
         "codeCoach.ai.authHeader": {
           "type": "string",
-          "default": "Authorization",
-          "description": "HTTP header used to pass the API key. Common values: Authorization, X-API-Key."
+          "default": "",
+          "description": "Override the authorization header name for the selected provider."
         },
         "codeCoach.ai.authScheme": {
           "type": "string",
-          "default": "Bearer",
-          "description": "Auth scheme prefix for the header value. Example: 'Bearer' to send 'Authorization: Bearer <key>'. Leave empty to send the key as-is."
+          "default": "",
+          "description": "Override the authorization scheme (e.g., Bearer). Leave empty to send the key as-is."
+        },
+        "codeCoach.ai.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "AI sampling temperature."
+        },
+        "codeCoach.ai.maxTokens": {
+          "type": "number",
+          "default": 800,
+          "minimum": 64,
+          "maximum": 4000,
+          "description": "Maximum tokens requested from the model."
+        },
+        "codeCoach.ai.extraHeaders": {
+          "type": "object",
+          "default": {},
+          "description": "Extra headers to include in AI requests."
+        },
+        "codeCoach.ai.openrouter.referer": {
+          "type": "string",
+          "default": "",
+          "description": "Optional HTTP-Referer header for OpenRouter requests."
+        },
+        "codeCoach.ai.openrouter.title": {
+          "type": "string",
+          "default": "",
+          "description": "Optional X-Title header for OpenRouter requests."
+        },
+        "codeCoach.ai.promptOptimizer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the prompt optimizer layer for more consistent LLM outputs."
+        },
+        "codeCoach.ai.promptOptimizerMode": {
+          "type": "string",
+          "default": "strict",
+          "enum": [
+            "strict",
+            "balanced",
+            "compact"
+          ],
+          "description": "Controls how verbose the prompt optimizer is when structuring LLM requests."
+        },
+        "codeCoach.ai.promptDebug": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, print the optimized prompt to the Code Coach output channel."
+        },
+        "codeCoach.ai.strictJson": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require valid JSON-only responses from the model; otherwise fall back to static explanations."
+        },
+        "codeCoach.privacy.mode": {
+          "type": "string",
+          "default": "offline",
+          "enum": [
+            "offline",
+            "local",
+            "redacted",
+            "full"
+          ],
+          "description": "Privacy mode for AI requests. Offline blocks AI; local restricts to localhost; redacted strips sensitive content; full sends raw context."
+        },
+        "codeCoach.privacy.allowedDomains": {
+          "type": "array",
+          "default": [],
+          "description": "Allowlist of domains for AI requests (empty = allow all)."
+        },
+        "codeCoach.privacy.redactPatterns": {
+          "type": "array",
+          "default": [],
+          "description": "Regex patterns to redact before sending to AI."
+        },
+        "codeCoach.privacy.maxContextChars": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 500,
+          "maximum": 50000,
+          "description": "Maximum number of characters sent to the LLM after redaction."
         },
         "codeCoach.runtime.enabled": {
           "type": "boolean",
@@ -125,8 +533,169 @@
           "minimum": 5,
           "maximum": 200,
           "description": "Maximum number of local variables to include in runtime explanations."
+        },
+        "codeCoach.ui.explainSelection": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel",
+            "peek"
+          ],
+          "default": "output",
+          "description": "Where to display Explain Selection results."
+        },
+        "codeCoach.ui.explainWhyWorks": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel",
+            "peek"
+          ],
+          "default": "output",
+          "description": "Where to display Explain Why This Works results."
+        },
+        "codeCoach.ui.explainDiagnostic": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel",
+            "peek"
+          ],
+          "default": "output",
+          "description": "Where to display Explain Diagnostic command results."
+        },
+        "codeCoach.ui.traceDiagnosticOrigin": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel",
+            "peek"
+          ],
+          "default": "output",
+          "description": "Where to display Trace Diagnostic Origin results."
+        },
+        "codeCoach.ui.runtimeException": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel",
+            "peek"
+          ],
+          "default": "output",
+          "description": "Where to display Explain Last Exception results."
+        },
+        "codeCoach.ui.codeSmells": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel",
+            "peek"
+          ],
+          "default": "output",
+          "description": "Where to display Code Smells reports."
+        },
+        "codeCoach.ui.testGaps": {
+          "type": "string",
+          "enum": [
+            "output",
+            "panel",
+            "peek"
+          ],
+          "default": "output",
+          "description": "Where to display Test Gap reports."
+        },
+        "codeCoach.deepDive.sections": {
+          "type": "array",
+          "default": [],
+          "description": "Limit Deep Dive sections to show (overview, usages, blame, history, summary, tests, coverage). Empty means all."
+        },
+        "codeCoach.deepDive.aiSummary": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include AI summary in Deep Dive when AI is enabled."
+        },
+        "codeCoach.deepDive.historyLimit": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 30,
+          "description": "Maximum number of recent commits to show in Deep Dive history."
+        },
+        "codeCoach.performance.prewarmSymbols": {
+          "type": "boolean",
+          "default": false,
+          "description": "Prewarm symbol cache in the background for large repos."
+        },
+        "codeCoach.performance.prewarmFileLimit": {
+          "type": "number",
+          "default": 200,
+          "minimum": 10,
+          "maximum": 2000,
+          "description": "Maximum number of files to index during prewarm."
+        },
+        "codeCoach.performance.prewarmDelayMs": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Delay before background prewarm starts."
+        },
+        "codeCoach.performance.prewarmGlob": {
+          "type": "array",
+          "default": [
+            "**/*.{ts,tsx,js,jsx}"
+          ],
+          "description": "Glob patterns for background prewarm."
+        },
+        "codeCoach.performance.prewarmExclude": {
+          "type": "string",
+          "default": "**/node_modules/**",
+          "description": "Exclude glob for background prewarm."
+        },
+        "codeCoach.coachMode.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Coach Mode inline annotations (inlay hints)."
+        },
+        "codeCoach.coachMode.maxHints": {
+          "type": "number",
+          "default": 40,
+          "minimum": 5,
+          "maximum": 200,
+          "description": "Maximum number of Coach Mode hints per file."
+        },
+        "codeCoach.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable local telemetry logging to the Code Coach Telemetry output channel."
+        },
+        "codeCoach.testGaps.coveragePaths": {
+          "type": "array",
+          "default": [
+            "**/lcov.info",
+            "**/coverage-final.json"
+          ],
+          "description": "Glob patterns for coverage files used by Test Gap Finder."
+        },
+        "codeCoach.enterprise.allowedAiProviders": {
+          "type": "array",
+          "default": [],
+          "description": "Restrict AI providers to this allowlist (empty = allow all)."
+        },
+        "codeCoach.enterprise.auditLogPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional file path for audit log events (local-only)."
         }
       }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "codeCoach.deepDive",
+          "name": "Code Coach: Deep Dive"
+        }
+      ]
     }
   },
   "scripts": {

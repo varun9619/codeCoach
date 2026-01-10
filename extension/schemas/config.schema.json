@@ -1,0 +1,314 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-coach.dev/schema/config.json",
+  "title": "Code Coach Configuration",
+  "description": "Configuration schema for Code Coach VS Code extension",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for editor autocomplete"
+    },
+    "version": {
+      "type": "integer",
+      "description": "Config file version",
+      "const": 1
+    },
+    "ai": {
+      "type": "object",
+      "description": "AI provider settings",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable AI-assisted explanations",
+          "default": false
+        },
+        "provider": {
+          "type": "string",
+          "description": "AI provider to use",
+          "enum": ["openrouter", "openai", "anthropic", "gemini", "ollama", "lmstudio"],
+          "default": "openrouter"
+        },
+        "model": {
+          "type": "string",
+          "description": "Model identifier (provider-specific)"
+        },
+        "responseStyle": {
+          "type": "string",
+          "description": "How AI explanations are written",
+          "enum": ["concise", "detailed"],
+          "default": "concise"
+        },
+        "temperature": {
+          "type": "number",
+          "description": "AI sampling temperature",
+          "minimum": 0,
+          "maximum": 2,
+          "default": 0.2
+        },
+        "maxTokens": {
+          "type": "integer",
+          "description": "Maximum tokens requested from the model",
+          "minimum": 64,
+          "maximum": 4000,
+          "default": 800
+        },
+        "promptOptimizer": {
+          "type": "boolean",
+          "description": "Enable prompt optimizer for more consistent outputs",
+          "default": true
+        },
+        "promptOptimizerMode": {
+          "type": "string",
+          "description": "Prompt optimizer verbosity level",
+          "enum": ["strict", "balanced", "compact"],
+          "default": "strict"
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "description": "Privacy and data handling settings",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "Privacy mode for AI requests",
+          "enum": ["offline", "local", "redacted", "full"],
+          "default": "offline",
+          "enumDescriptions": [
+            "No AI calls (static analysis only)",
+            "Only localhost LLMs (Ollama, LM Studio)",
+            "Strip comments/strings + redact patterns before sending",
+            "Send full context to AI"
+          ]
+        },
+        "allowedDomains": {
+          "type": "array",
+          "description": "Allowlist of domains for AI requests (empty = allow all)",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "redactPatterns": {
+          "type": "array",
+          "description": "Regex patterns to redact before sending to AI",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "maxContextChars": {
+          "type": "integer",
+          "description": "Maximum characters sent to LLM after redaction",
+          "minimum": 500,
+          "maximum": 50000,
+          "default": 4000
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "description": "UI display surface settings",
+      "additionalProperties": false,
+      "properties": {
+        "explainSelection": {
+          "type": "string",
+          "description": "Where to display Explain Selection results",
+          "enum": ["output", "panel", "peek"],
+          "default": "output"
+        },
+        "explainWhyWorks": {
+          "type": "string",
+          "description": "Where to display Explain Why This Works results",
+          "enum": ["output", "panel", "peek"],
+          "default": "output"
+        },
+        "explainDiagnostic": {
+          "type": "string",
+          "description": "Where to display Explain Diagnostic results",
+          "enum": ["output", "panel", "peek"],
+          "default": "output"
+        },
+        "traceDiagnosticOrigin": {
+          "type": "string",
+          "description": "Where to display Trace Diagnostic Origin results",
+          "enum": ["output", "panel", "peek"],
+          "default": "output"
+        },
+        "runtimeException": {
+          "type": "string",
+          "description": "Where to display Explain Last Exception results",
+          "enum": ["output", "panel", "peek"],
+          "default": "output"
+        },
+        "codeSmells": {
+          "type": "string",
+          "description": "Where to display Code Smells reports",
+          "enum": ["output", "panel", "peek"],
+          "default": "output"
+        },
+        "testGaps": {
+          "type": "string",
+          "description": "Where to display Test Gap reports",
+          "enum": ["output", "panel", "peek"],
+          "default": "output"
+        }
+      }
+    },
+    "deepDive": {
+      "type": "object",
+      "description": "Deep Dive sidebar settings",
+      "additionalProperties": false,
+      "properties": {
+        "sections": {
+          "type": "array",
+          "description": "Sections to show in Deep Dive (empty = all)",
+          "items": {
+            "type": "string",
+            "enum": ["overview", "usages", "blame", "history", "summary", "tests", "coverage"]
+          },
+          "default": []
+        },
+        "aiSummary": {
+          "type": "boolean",
+          "description": "Include AI summary in Deep Dive when AI is enabled",
+          "default": true
+        },
+        "historyLimit": {
+          "type": "integer",
+          "description": "Maximum recent commits to show in Deep Dive history",
+          "minimum": 1,
+          "maximum": 30,
+          "default": 10
+        }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "description": "Performance settings for large repositories",
+      "additionalProperties": false,
+      "properties": {
+        "prewarmSymbols": {
+          "type": "boolean",
+          "description": "Prewarm symbol cache in background",
+          "default": false
+        },
+        "prewarmFileLimit": {
+          "type": "integer",
+          "description": "Maximum files to index during prewarm",
+          "minimum": 10,
+          "maximum": 2000,
+          "default": 200
+        },
+        "prewarmDelayMs": {
+          "type": "integer",
+          "description": "Delay before background prewarm starts (ms)",
+          "minimum": 0,
+          "maximum": 60000,
+          "default": 1500
+        },
+        "prewarmGlob": {
+          "type": "array",
+          "description": "Glob patterns for background prewarm",
+          "items": {
+            "type": "string"
+          },
+          "default": ["**/*.{ts,tsx,js,jsx}"]
+        },
+        "prewarmExclude": {
+          "type": "string",
+          "description": "Exclude glob for background prewarm",
+          "default": "**/node_modules/**"
+        }
+      }
+    },
+    "coachMode": {
+      "type": "object",
+      "description": "Coach Mode inline hint settings",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable Coach Mode inline annotations (inlay hints)",
+          "default": false
+        },
+        "maxHints": {
+          "type": "integer",
+          "description": "Maximum Coach Mode hints per file",
+          "minimum": 5,
+          "maximum": 200,
+          "default": 40
+        }
+      }
+    },
+    "templates": {
+      "type": "object",
+      "description": "Explanation template settings",
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "type": "string",
+          "description": "Default template ID to use for explanations",
+          "default": "default"
+        },
+        "showPicker": {
+          "type": "boolean",
+          "description": "Show template picker on every explain command",
+          "default": true
+        },
+        "customTemplatesPath": {
+          "type": "string",
+          "description": "Path to custom templates directory (relative to .code-coach/)",
+          "default": "templates"
+        },
+        "maxRecentTemplates": {
+          "type": "integer",
+          "description": "Maximum recent templates to remember",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 5
+        }
+      }
+    },
+    "testGaps": {
+      "type": "object",
+      "description": "Test Gap Finder settings",
+      "additionalProperties": false,
+      "properties": {
+        "coveragePaths": {
+          "type": "array",
+          "description": "Glob patterns for coverage files",
+          "items": {
+            "type": "string"
+          },
+          "default": ["**/lcov.info", "**/coverage-final.json"]
+        }
+      }
+    },
+    "enterprise": {
+      "type": "object",
+      "description": "Enterprise control settings",
+      "additionalProperties": false,
+      "properties": {
+        "allowedAiProviders": {
+          "type": "array",
+          "description": "Restrict AI providers to this allowlist (empty = allow all)",
+          "items": {
+            "type": "string",
+            "enum": ["openrouter", "openai", "anthropic", "gemini", "ollama", "lmstudio"]
+          },
+          "default": []
+        },
+        "auditLogPath": {
+          "type": "string",
+          "description": "File path for audit log events (local-only)",
+          "default": ""
+        }
+      }
+    }
+  }
+}

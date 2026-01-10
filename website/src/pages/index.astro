@@ -1,0 +1,566 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import logo from '../assets/logo.svg';
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'Code Coach',
+    description: 'Explain code you didn\'t write. Plain-English explanations, debugging guidance, and team collaboration for AI-assisted codebases.',
+    template: 'splash',
+    hero: {
+      title: 'Explain Code You Didn\'t Write',
+      tagline: 'Plain-English explanations, debugging guidance, and team collaboration for AI-assisted codebases. Works offline. Privacy-first.',
+      image: {
+        file: logo,
+      },
+      actions: [
+        { text: 'Install Free', link: 'https://marketplace.visualstudio.com/items?itemName=code-coach.code-coach', icon: 'external', variant: 'primary' },
+        { text: 'View Docs', link: '/getting-started/installation/', icon: 'right-arrow' },
+      ],
+    },
+  }}
+>
+  <div class="landing-content">
+    <!-- Problem Statement -->
+    <section class="problem-section">
+      <div class="section-header">
+        <span class="section-badge">The Problem</span>
+        <h2>AI writes code faster than ever.<br/>Understanding it hasn't caught up.</h2>
+      </div>
+      <div class="persona-grid">
+        <div class="persona-card">
+          <span class="persona-icon">👋</span>
+          <h3>New Team Member</h3>
+          <p>"I joined mid-project and can't tell what this code does or why it's structured this way."</p>
+        </div>
+        <div class="persona-card">
+          <span class="persona-icon">🤖</span>
+          <h3>AI-Assisted Dev</h3>
+          <p>"Copilot wrote this function but I need to understand it before I can maintain it."</p>
+        </div>
+        <div class="persona-card">
+          <span class="persona-icon">🏚️</span>
+          <h3>Legacy Maintainer</h3>
+          <p>"This codebase is 5 years old, undocumented, and the original team is gone."</p>
+        </div>
+        <div class="persona-card">
+          <span class="persona-icon">🔍</span>
+          <h3>Code Reviewer</h3>
+          <p>"I need to review this PR but I don't have context on this part of the codebase."</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Core Features -->
+    <section class="features-section">
+      <div class="section-header">
+        <span class="section-badge">Core Features</span>
+        <h2>Understand any code in seconds</h2>
+      </div>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-icon">💬</div>
+          <h3>Explain Selection</h3>
+          <p>Select any code, get line-by-line explanations with citations. Know exactly which line does what.</p>
+          <div class="demo-placeholder">
+            <span>Demo GIF: Select → Explain</span>
+          </div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔬</div>
+          <h3>Deep Dive</h3>
+          <p>Full symbol analysis: usages, git blame, history, tests, coverage. Everything in one sidebar.</p>
+          <div class="demo-placeholder">
+            <span>Demo GIF: Deep Dive Sidebar</span>
+          </div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🐛</div>
+          <h3>Explain Diagnostics</h3>
+          <p>Hover over any error. Get plain-English cause, fix, and learning resources.</p>
+          <div class="demo-placeholder">
+            <span>Demo GIF: Error Explanation</span>
+          </div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🎯</div>
+          <h3>Trace Origin</h3>
+          <p>Find the root cause of any error through call chains. Stop guessing, start tracing.</p>
+          <div class="demo-placeholder">
+            <span>Demo GIF: Trace Call Chain</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team Intelligence -->
+    <section class="team-section">
+      <div class="section-header">
+        <span class="section-badge">Team Intelligence</span>
+        <h2>Share understanding across your team</h2>
+      </div>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-icon">📝</div>
+          <h3>Explanation Templates</h3>
+          <p>Junior Dev, Security Review, Performance Analysis - tailor explanations for any audience.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📌</div>
+          <h3>Team Pinned Symbols</h3>
+          <p>Mark critical code with annotations. New team members see what matters immediately.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <h3>Explain Diff</h3>
+          <p>"What changed in this PR?" Get plain-English summaries with citations to actual changes.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🗺️</div>
+          <h3>Onboarding Tours</h3>
+          <p>Create guided walkthroughs. New hires explore the codebase with context, not confusion.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔔</div>
+          <h3>Change Subscriptions</h3>
+          <p>Subscribe to files you care about. Get notified when teammates modify critical code.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🕸️</div>
+          <h3>Knowledge Graph</h3>
+          <p>Visualize your codebase structure. See dependencies, hotspots, and team expertise at a glance.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pricing Preview -->
+    <section class="pricing-section">
+      <div class="section-header">
+        <span class="section-badge">Pricing</span>
+        <h2>Start free. Scale with your team.</h2>
+      </div>
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="pricing-header">
+            <h3>Free</h3>
+            <div class="price">$0</div>
+            <p class="price-period">forever</p>
+          </div>
+          <ul class="pricing-features">
+            <li>✓ All core features</li>
+            <li>✓ 100 AI explanations/month</li>
+            <li>✓ Offline static analysis</li>
+            <li>✓ Privacy-first mode</li>
+          </ul>
+          <a href="https://marketplace.visualstudio.com/items?itemName=code-coach.code-coach" class="pricing-cta">Install Free</a>
+        </div>
+        <div class="pricing-card featured">
+          <div class="featured-badge">Most Popular</div>
+          <div class="pricing-header">
+            <h3>Pro</h3>
+            <div class="price">$9</div>
+            <p class="price-period">per month</p>
+          </div>
+          <ul class="pricing-features">
+            <li>✓ Everything in Free</li>
+            <li>✓ Unlimited AI explanations</li>
+            <li>✓ Claude/GPT-4 access</li>
+            <li>✓ Priority responses</li>
+          </ul>
+          <a href="/docs/pricing/" class="pricing-cta primary">Get Pro</a>
+        </div>
+        <div class="pricing-card">
+          <div class="pricing-header">
+            <h3>Team</h3>
+            <div class="price">$19</div>
+            <p class="price-period">per user/month</p>
+          </div>
+          <ul class="pricing-features">
+            <li>✓ Everything in Pro</li>
+            <li>✓ Team Intelligence suite</li>
+            <li>✓ Shared explanation cache</li>
+            <li>✓ Onboarding tours</li>
+          </ul>
+          <a href="/docs/pricing/" class="pricing-cta">Get Team</a>
+        </div>
+      </div>
+      <p class="pricing-note">Need SSO, custom endpoints, or enterprise features? <a href="/enterprise/overview/">Contact us</a></p>
+    </section>
+
+    <!-- Trust Section -->
+    <section class="trust-section">
+      <div class="section-header">
+        <h2>Privacy-first. Offline-capable. Open source.</h2>
+      </div>
+      <div class="trust-grid">
+        <div class="trust-item">
+          <span class="trust-icon">🔒</span>
+          <h4>Privacy Modes</h4>
+          <p>Offline, local, redacted, or full - you control what data leaves your machine.</p>
+        </div>
+        <div class="trust-item">
+          <span class="trust-icon">⚡</span>
+          <h4>Works Offline</h4>
+          <p>Core features work without any API calls. AI enhances, but isn't required.</p>
+        </div>
+        <div class="trust-item">
+          <span class="trust-icon">🌐</span>
+          <h4>Your AI Provider</h4>
+          <p>OpenRouter, OpenAI, Anthropic, Gemini, Ollama, or self-hosted - bring your own model.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section">
+      <h2>Ready to understand any codebase?</h2>
+      <p>Install Code Coach and explain your first function in under a minute.</p>
+      <div class="cta-buttons">
+        <a href="https://marketplace.visualstudio.com/items?itemName=code-coach.code-coach" class="cta-button primary">
+          Install for VS Code
+        </a>
+        <a href="/getting-started/installation/" class="cta-button secondary">
+          Read the Docs
+        </a>
+      </div>
+    </section>
+  </div>
+</StarlightPage>
+
+<style>
+  .landing-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  .section-header {
+    text-align: center;
+    margin-bottom: 3rem;
+  }
+
+  .section-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background: var(--sl-color-accent-low);
+    color: var(--sl-color-accent-high);
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 1rem;
+  }
+
+  .section-header h2 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--sl-color-white);
+  }
+
+  /* Problem Section */
+  .problem-section {
+    margin: 4rem 0;
+  }
+
+  .persona-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .persona-card {
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    text-align: center;
+  }
+
+  .persona-icon {
+    font-size: 2.5rem;
+    display: block;
+    margin-bottom: 1rem;
+  }
+
+  .persona-card h3 {
+    color: var(--sl-color-white);
+    margin: 0 0 0.5rem;
+    font-size: 1.125rem;
+  }
+
+  .persona-card p {
+    color: var(--sl-color-gray-2);
+    margin: 0;
+    font-size: 0.875rem;
+    font-style: italic;
+  }
+
+  /* Features Section */
+  .features-section,
+  .team-section {
+    margin: 5rem 0;
+  }
+
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .feature-card {
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .feature-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--sl-color-accent);
+  }
+
+  .feature-icon {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+  }
+
+  .feature-card h3 {
+    color: var(--sl-color-white);
+    margin: 0 0 0.5rem;
+    font-size: 1.25rem;
+  }
+
+  .feature-card p {
+    color: var(--sl-color-gray-2);
+    margin: 0;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+  }
+
+  .demo-placeholder {
+    margin-top: 1rem;
+    padding: 3rem 1rem;
+    background: var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    text-align: center;
+    color: var(--sl-color-gray-3);
+    font-size: 0.875rem;
+  }
+
+  /* Pricing Section */
+  .pricing-section {
+    margin: 5rem 0;
+  }
+
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .pricing-card {
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 1rem;
+    padding: 2rem;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pricing-card.featured {
+    border-color: var(--sl-color-accent);
+    box-shadow: 0 0 0 1px var(--sl-color-accent);
+  }
+
+  .featured-badge {
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--sl-color-accent);
+    color: white;
+    padding: 0.25rem 1rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .pricing-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .pricing-header h3 {
+    color: var(--sl-color-white);
+    margin: 0 0 0.5rem;
+    font-size: 1.25rem;
+  }
+
+  .price {
+    font-size: 3rem;
+    font-weight: 700;
+    color: var(--sl-color-white);
+    line-height: 1;
+  }
+
+  .price-period {
+    color: var(--sl-color-gray-3);
+    margin: 0.25rem 0 0;
+    font-size: 0.875rem;
+  }
+
+  .pricing-features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.5rem;
+    flex-grow: 1;
+  }
+
+  .pricing-features li {
+    padding: 0.5rem 0;
+    color: var(--sl-color-gray-2);
+    font-size: 0.9375rem;
+  }
+
+  .pricing-cta {
+    display: block;
+    text-align: center;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    text-decoration: none;
+    background: var(--sl-color-gray-5);
+    color: var(--sl-color-white);
+    transition: background 0.2s;
+  }
+
+  .pricing-cta:hover {
+    background: var(--sl-color-gray-4);
+  }
+
+  .pricing-cta.primary {
+    background: var(--sl-color-accent);
+  }
+
+  .pricing-cta.primary:hover {
+    background: var(--sl-color-accent-high);
+  }
+
+  .pricing-note {
+    text-align: center;
+    margin-top: 2rem;
+    color: var(--sl-color-gray-3);
+    font-size: 0.875rem;
+  }
+
+  .pricing-note a {
+    color: var(--sl-color-accent-high);
+  }
+
+  /* Trust Section */
+  .trust-section {
+    margin: 5rem 0;
+    text-align: center;
+  }
+
+  .trust-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+  }
+
+  .trust-item {
+    text-align: center;
+  }
+
+  .trust-icon {
+    font-size: 2.5rem;
+    display: block;
+    margin-bottom: 1rem;
+  }
+
+  .trust-item h4 {
+    color: var(--sl-color-white);
+    margin: 0 0 0.5rem;
+    font-size: 1.125rem;
+  }
+
+  .trust-item p {
+    color: var(--sl-color-gray-2);
+    margin: 0;
+    font-size: 0.875rem;
+  }
+
+  /* CTA Section */
+  .cta-section {
+    text-align: center;
+    margin: 5rem 0 2rem;
+    padding: 3rem;
+    background: linear-gradient(135deg, var(--sl-color-accent-low), transparent);
+    border-radius: 1rem;
+  }
+
+  .cta-section h2 {
+    color: var(--sl-color-white);
+    margin: 0 0 0.5rem;
+    font-size: 2rem;
+  }
+
+  .cta-section p {
+    color: var(--sl-color-gray-2);
+    margin: 0 0 2rem;
+    font-size: 1.125rem;
+  }
+
+  .cta-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .cta-button {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.875rem 1.75rem;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .cta-button:hover {
+    transform: translateY(-2px);
+  }
+
+  .cta-button.primary {
+    background: var(--sl-color-accent);
+    color: white;
+  }
+
+  .cta-button.secondary {
+    background: var(--sl-color-gray-5);
+    color: var(--sl-color-white);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .section-header h2 {
+      font-size: 1.75rem;
+    }
+
+    .price {
+      font-size: 2.5rem;
+    }
+
+    .cta-section {
+      padding: 2rem 1rem;
+    }
+  }
+</style>

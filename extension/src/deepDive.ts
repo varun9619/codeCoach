@@ -1,0 +1,907 @@
+import * as vscode from 'vscode';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import * as path from 'node:path';
+import { getDocumentSymbols, getReferences } from './analysisCache';
+import { TeamPin, TeamPinManager, stringToSymbolKind } from './teamPins';
+
+const execFileAsync = promisify(execFile);
+
+export type DeepDiveData = {
+  overview: {
+    name: string;
+    kind: vscode.SymbolKind;
+    filePath: string;
+    range: vscode.Range;
+  };
+  usages: vscode.Location[];
+  blame: BlameEntry[];
+  coverage?: CoverageSummary;
+  history: CommitEntry[];
+  summary?: DeepDiveSummary;
+  tests: TestReference[];
+};
+
+export type CoverageSummary = {
+  totalLines: number;
+  hitLines: number;
+  uncoveredLines: number[];
+  source: string;
+};
+
+export type TestReference = {
+  label: string;
+  uri: vscode.Uri;
+  range: vscode.Range;
+  description?: string;
+};
+
+export type BlameEntry = {
+  line: number;
+  author: string;
+  time: string;
+  summary: string;
+};
+
+export type CommitEntry = {
+  hash: string;
+  author: string;
+  date: string;
+  summary: string;
+};
+
+export type DeepDiveSummary = {
+  text: string;
+  source: 'ai' | 'static';
+};
+
+export type DeepDiveSection = 'overview' | 'usages' | 'blame' | 'history' | 'summary' | 'tests' | 'coverage' | 'pinned' | 'teamPinned';
+
+export type DeepDivePin = {
+  id: string;
+  name: string;
+  kind: vscode.SymbolKind;
+  filePath: string;
+  line: number;
+  character: number;
+  pinnedAt: string;
+};
+
+export type SerializableDeepDiveData = {
+  overview: {
+    name: string;
+    kind: string;
+    filePath: string;
+    range: { start: number; end: number };
+  };
+  usages: Array<{ filePath: string; line: number }>;
+  blame: BlameEntry[];
+  coverage?: CoverageSummary;
+  history: CommitEntry[];
+  summary?: DeepDiveSummary;
+  tests: Array<{ label: string; filePath: string; line: number; description?: string }>;
+};
+
+export class DeepDiveProvider implements vscode.TreeDataProvider<DeepDiveItem> {
+  private readonly emitter = new vscode.EventEmitter<DeepDiveItem | undefined | void>();
+  readonly onDidChangeTreeData = this.emitter.event;
+
+  private data?: DeepDiveData;
+  private rootItems: DeepDiveItem[] = [];
+  private parentMap = new Map<DeepDiveItem, DeepDiveItem | undefined>();
+  private pinned: DeepDivePin[] = [];
+  private teamPins: TeamPin[] = [];
+  private sectionFilter?: Set<DeepDiveSection>;
+
+  setData(data?: DeepDiveData): void {
+    this.data = data;
+    this.updateRootItems();
+  }
+
+  setPinned(pins: DeepDivePin[]): void {
+    this.pinned = pins;
+    this.updateRootItems();
+  }
+
+  setTeamPins(pins: TeamPin[]): void {
+    this.teamPins = pins;
+    this.updateRootItems();
+  }
+
+  setSectionFilter(filter?: Set<DeepDiveSection>): void {
+    this.sectionFilter = filter;
+    this.updateRootItems();
+  }
+
+  private updateRootItems(): void {
+    const items: DeepDiveItem[] = [];
+
+    // Team Pins section (shown first, above personal pins)
+    if (this.teamPins.length > 0) {
+      const teamPinItem = new DeepDiveItem('Team Pins', 'section');
+      teamPinItem.section = 'teamPinned';
+      items.push(teamPinItem);
+    }
+
+    // Personal pins (renamed from "Pinned" to "Your Pins")
+    if (this.pinned.length > 0) {
+      items.push(new DeepDiveItem('Your Pins', 'section'));
+    }
+
+    if (this.data) {
+      const sections: Array<{ label: string; id: DeepDiveSection }> = [
+        { label: 'Overview', id: 'overview' },
+        { label: 'Usages', id: 'usages' },
+        { label: 'Blame', id: 'blame' },
+        { label: 'History', id: 'history' },
+        { label: 'Summary', id: 'summary' },
+        { label: 'Tests', id: 'tests' },
+        { label: 'Coverage', id: 'coverage' }
+      ];
+      for (const section of sections) {
+        if (!this.sectionFilter || this.sectionFilter.has(section.id)) {
+          items.push(new DeepDiveItem(section.label, 'section'));
+        }
+      }
+    }
+
+    this.rootItems = items;
+    this.parentMap.clear();
+    for (const root of this.rootItems) {
+      this.parentMap.set(root, undefined);
+    }
+    this.emitter.fire();
+  }
+
+  getRootItems(): DeepDiveItem[] {
+    return this.rootItems;
+  }
+
+  getTreeItem(element: DeepDiveItem): vscode.TreeItem {
+    return element;
+  }
+
+  getChildren(element?: DeepDiveItem): vscode.ProviderResult<DeepDiveItem[]> {
+    if (!this.data && this.pinned.length === 0 && this.teamPins.length === 0) {
+      const hint = new DeepDiveItem('Select a symbol and run Code Coach: Deep Dive', 'hint');
+      this.parentMap.set(hint, undefined);
+      return [hint];
+    }
+
+    if (!element) {
+      return this.rootItems;
+    }
+
+    // Team Pins section
+    if (element.section === 'teamPinned') {
+      if (this.teamPins.length === 0) {
+        return [new DeepDiveItem('No team pins yet', 'item')];
+      }
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      const items = this.teamPins.map(pin => {
+        const absolutePath = workspaceFolder
+          ? path.join(workspaceFolder.uri.fsPath, pin.filePath)
+          : pin.filePath;
+        const label = `★ ${pin.symbol}`;
+        const description = `${pin.filePath}:${pin.line}`;
+        const range = new vscode.Range(
+          Math.max(0, pin.line - 1),
+          Math.max(0, pin.character),
+          Math.max(0, pin.line - 1),
+          Math.max(0, pin.character)
+        );
+        const item = new DeepDiveItem(label, 'item', { uri: vscode.Uri.file(absolutePath), range }, description);
+        item.contextValue = 'teamPin';
+        item.tooltip = this.formatTeamPinTooltip(pin);
+        item.command = {
+          command: 'codeCoach.teamPins.open',
+          title: 'Open Team Pin',
+          arguments: [pin.id]
+        };
+        this.parentMap.set(item, element);
+        return item;
+      });
+      return items;
+    }
+
+    // Personal pins section (Your Pins)
+    if (element.section === 'pinned') {
+      if (this.pinned.length === 0) {
+        return [new DeepDiveItem('No pins yet', 'item')];
+      }
+      const items = this.pinned.map(pin => {
+        const relPath = vscode.workspace.asRelativePath(pin.filePath);
+        const label = `${pin.name} (${symbolKindLabel(pin.kind)})`;
+        const description = `${relPath}:${pin.line}`;
+        const range = new vscode.Range(Math.max(0, pin.line - 1), Math.max(0, pin.character), Math.max(0, pin.line - 1), Math.max(0, pin.character));
+        const item = new DeepDiveItem(label, 'item', { uri: vscode.Uri.file(pin.filePath), range }, description);
+        item.contextValue = 'deepDivePin';
+        item.command = {
+          command: 'codeCoach.deepDive.openPinned',
+          title: 'Open Pinned',
+          arguments: [pin.id]
+        };
+        this.parentMap.set(item, element);
+        return item;
+      });
+      return items;
+    }
+
+    if (!this.data) {
+      return [];
+    }
+
+    if (element.section === 'overview') {
+      const overview = this.data.overview;
+      const relPath = vscode.workspace.asRelativePath(overview.filePath);
+      const items = [
+        new DeepDiveItem(`Symbol: ${overview.name}`, 'item'),
+        new DeepDiveItem(`Kind: ${symbolKindLabel(overview.kind)}`, 'item'),
+        new DeepDiveItem(`Location: ${relPath}:${overview.range.start.line + 1}`, 'item', {
+          uri: vscode.Uri.file(overview.filePath),
+          range: overview.range
+        })
+      ];
+      if (this.data.coverage) {
+        const coverage = this.data.coverage;
+        const percent = coverage.totalLines === 0 ? 0 : Math.round((coverage.hitLines / coverage.totalLines) * 100);
+        items.push(new DeepDiveItem(`Coverage: ${coverage.hitLines}/${coverage.totalLines} (${percent}%)`, 'item'));
+      }
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
+    }
+
+    if (element.section === 'usages') {
+      if (this.data.usages.length === 0) {
+        return [new DeepDiveItem('No usages found', 'item')];
+      }
+      const items = this.data.usages.slice(0, 20).map(loc => {
+        const label = `${vscode.workspace.asRelativePath(loc.uri.fsPath)}:${loc.range.start.line + 1}`;
+        return new DeepDiveItem(label, 'item', { uri: loc.uri, range: loc.range });
+      });
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
+    }
+
+    if (element.section === 'blame') {
+      if (this.data.blame.length === 0) {
+        return [new DeepDiveItem('No blame info available', 'item')];
+      }
+      const items = this.data.blame.slice(0, 10).map(entry => {
+        const label = `${entry.author} — ${entry.summary}`;
+        const description = `L${entry.line} • ${entry.time}`;
+        return new DeepDiveItem(label, 'item', undefined, description);
+      });
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
+    }
+
+    if (element.section === 'history') {
+      if (this.data.history.length === 0) {
+        return [new DeepDiveItem('No history found', 'item')];
+      }
+      const items = this.data.history.slice(0, 10).map(entry => {
+        const label = `${entry.hash} — ${entry.summary}`;
+        const description = `${entry.author} • ${entry.date}`;
+        return new DeepDiveItem(label, 'item', undefined, description);
+      });
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
+    }
+
+    if (element.section === 'summary') {
+      if (!this.data.summary) {
+        return [new DeepDiveItem('AI summary not available', 'item')];
+      }
+      const lines = this.data.summary.text.split('\n').filter(Boolean);
+      const items = lines.slice(0, 8).map(line => new DeepDiveItem(line, 'item', undefined));
+      for (const item of items) this.parentMap.set(item, element);
+      return items.length > 0 ? items : [new DeepDiveItem('Summary available', 'item')];
+    }
+
+    if (element.section === 'tests') {
+      if (this.data.tests.length === 0) {
+        return [new DeepDiveItem('No tests found', 'item')];
+      }
+      const items = this.data.tests.slice(0, 20).map(test => {
+        return new DeepDiveItem(test.label, 'item', { uri: test.uri, range: test.range }, test.description);
+      });
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
+    }
+
+    if (element.section === 'coverage') {
+      const coverage = this.data.coverage;
+      if (!coverage) {
+        return [new DeepDiveItem('Coverage not found (no coverage files detected)', 'item')];
+      }
+      const percent = coverage.totalLines === 0 ? 0 : Math.round((coverage.hitLines / coverage.totalLines) * 100);
+      const summary = `Coverage: ${coverage.hitLines}/${coverage.totalLines} (${percent}%)`;
+      const fileUri = vscode.Uri.file(this.data.overview.filePath);
+      const items: DeepDiveItem[] = [new DeepDiveItem(summary, 'item', undefined, coverage.source)];
+      if (coverage.uncoveredLines.length > 0) {
+        for (const line of coverage.uncoveredLines.slice(0, 15)) {
+          const range = new vscode.Range(Math.max(0, line - 1), 0, Math.max(0, line - 1), 0);
+          items.push(new DeepDiveItem(`Uncovered line L${line}`, 'item', { uri: fileUri, range }));
+        }
+        if (coverage.uncoveredLines.length > 15) {
+          items.push(new DeepDiveItem(`...and ${coverage.uncoveredLines.length - 15} more uncovered lines`, 'item'));
+        }
+      }
+      for (const item of items) this.parentMap.set(item, element);
+      return items;
+    }
+
+    return [];
+  }
+
+  getParent(element: DeepDiveItem): vscode.ProviderResult<DeepDiveItem> {
+    return this.parentMap.get(element);
+  }
+
+  private formatTeamPinTooltip(pin: TeamPin): vscode.MarkdownString {
+    const md = new vscode.MarkdownString();
+    md.appendMarkdown(`**${pin.symbol}** (${pin.kind})\n\n`);
+    md.appendMarkdown(`*"${pin.annotation}"*\n\n`);
+    md.appendMarkdown(`📍 ${pin.filePath}:${pin.line}\n\n`);
+    if (pin.tags && pin.tags.length > 0) {
+      md.appendMarkdown(`🏷️ ${pin.tags.join(', ')}\n\n`);
+    }
+    md.appendMarkdown(`👤 @${pin.author} • ${new Date(pin.createdAt).toLocaleDateString()}`);
+    return md;
+  }
+}
+
+export class DeepDiveItem extends vscode.TreeItem {
+  section?: DeepDiveSection;
+
+  constructor(
+    label: string,
+    kind: 'section' | 'item' | 'hint',
+    location?: { uri: vscode.Uri; range: vscode.Range },
+    description?: string
+  ) {
+    super(label, kind === 'section' ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
+    this.description = description;
+
+    if (kind === 'section') {
+      this.section = label.toLowerCase() as DeepDiveItem['section'];
+    }
+
+    if (location) {
+      this.command = {
+        command: 'codeCoach.openLocation',
+        title: 'Open Location',
+        arguments: [location.uri, location.range]
+      };
+    }
+  }
+}
+
+export function serializeDeepDiveData(data: DeepDiveData): SerializableDeepDiveData {
+  return {
+    overview: {
+      name: data.overview.name,
+      kind: symbolKindLabel(data.overview.kind),
+      filePath: data.overview.filePath,
+      range: {
+        start: data.overview.range.start.line + 1,
+        end: data.overview.range.end.line + 1
+      }
+    },
+    usages: data.usages.map(loc => ({
+      filePath: loc.uri.fsPath,
+      line: loc.range.start.line + 1
+    })),
+    blame: data.blame,
+    coverage: data.coverage,
+    history: data.history,
+    summary: data.summary,
+    tests: data.tests.map(test => ({
+      label: test.label,
+      filePath: test.uri.fsPath,
+      line: test.range.start.line + 1,
+      description: test.description
+    }))
+  };
+}
+
+export function formatDeepDiveMarkdown(data: DeepDiveData): string {
+  const relPath = vscode.workspace.asRelativePath(data.overview.filePath);
+  const out: string[] = [];
+  out.push(`# Deep Dive: ${data.overview.name}`);
+  out.push('');
+  out.push(`- Kind: ${symbolKindLabel(data.overview.kind)}`);
+  out.push(`- Location: ${relPath}:${data.overview.range.start.line + 1}`);
+  out.push('');
+
+  out.push('## Usages');
+  if (data.usages.length === 0) {
+    out.push('- No usages found.');
+  } else {
+    for (const loc of data.usages.slice(0, 50)) {
+      const label = `${vscode.workspace.asRelativePath(loc.uri.fsPath)}:${loc.range.start.line + 1}`;
+      out.push(`- ${label}`);
+    }
+  }
+  out.push('');
+
+  out.push('## Blame');
+  if (data.blame.length === 0) {
+    out.push('- No blame info available.');
+  } else {
+    for (const entry of data.blame.slice(0, 20)) {
+      out.push(`- L${entry.line}: ${entry.author} — ${entry.summary} (${entry.time})`);
+    }
+  }
+  out.push('');
+
+  out.push('## History');
+  if (data.history.length === 0) {
+    out.push('- No history found.');
+  } else {
+    for (const entry of data.history.slice(0, 20)) {
+      out.push(`- ${entry.hash}: ${entry.summary} — ${entry.author} (${entry.date})`);
+    }
+  }
+  out.push('');
+
+  out.push('## Summary');
+  if (!data.summary) {
+    out.push('- AI summary not available.');
+  } else {
+    out.push(data.summary.text.trim());
+  }
+  out.push('');
+
+  out.push('## Tests');
+  if (data.tests.length === 0) {
+    out.push('- No tests found.');
+  } else {
+    for (const test of data.tests.slice(0, 20)) {
+      const description = test.description ? ` — ${test.description}` : '';
+      out.push(`- ${test.label}${description}`);
+    }
+  }
+  out.push('');
+
+  out.push('## Coverage');
+  if (!data.coverage) {
+    out.push('- Coverage not found.');
+  } else {
+    const percent =
+      data.coverage.totalLines === 0 ? 0 : Math.round((data.coverage.hitLines / data.coverage.totalLines) * 100);
+    out.push(`- ${data.coverage.hitLines}/${data.coverage.totalLines} lines covered (${percent}%)`);
+    out.push(`- Source: ${data.coverage.source}`);
+    if (data.coverage.uncoveredLines.length > 0) {
+      out.push('- Uncovered lines:');
+      for (const line of data.coverage.uncoveredLines.slice(0, 20)) {
+        out.push(`  - L${line}`);
+      }
+    }
+  }
+
+  return out.join('\n').trimEnd();
+}
+
+export async function buildDeepDiveData(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): Promise<DeepDiveData | undefined> {
+  const symbols = await getDocumentSymbols(document);
+
+  if (!symbols || symbols.length === 0) return undefined;
+
+  const enclosing = findEnclosingSymbol(symbols, position);
+  if (!enclosing) return undefined;
+
+  const refs = await getReferences(document, enclosing.selectionRange.start);
+
+  const usages = (refs ?? []).filter(
+    ref => !(ref.uri.fsPath === document.uri.fsPath && ref.range.start.line === enclosing.selectionRange.start.line)
+  );
+
+  const blame = await loadBlame(document, enclosing.range);
+  const coverage = await loadCoverage(document, enclosing.range);
+  const tests = await findTestsForSymbol(document, enclosing);
+  const history = await loadHistory(document, enclosing.range);
+
+  return {
+    overview: {
+      name: enclosing.name,
+      kind: enclosing.kind,
+      filePath: document.uri.fsPath,
+      range: enclosing.range
+    },
+    usages,
+    blame,
+    history,
+    coverage,
+    summary: undefined,
+    tests
+  };
+}
+
+function findEnclosingSymbol(symbols: vscode.DocumentSymbol[], position: vscode.Position): vscode.DocumentSymbol | undefined {
+  for (const sym of symbols) {
+    if (!sym.range.contains(position)) continue;
+    const child = findEnclosingSymbol(sym.children, position);
+    return child ?? sym;
+  }
+  return undefined;
+}
+
+function symbolKindLabel(kind: vscode.SymbolKind): string {
+  switch (kind) {
+    case vscode.SymbolKind.Function:
+      return 'Function';
+    case vscode.SymbolKind.Method:
+      return 'Method';
+    case vscode.SymbolKind.Constructor:
+      return 'Constructor';
+    case vscode.SymbolKind.Class:
+      return 'Class';
+    case vscode.SymbolKind.Module:
+      return 'Module';
+    default:
+      return 'Symbol';
+  }
+}
+
+async function loadBlame(document: vscode.TextDocument, range: vscode.Range): Promise<BlameEntry[]> {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+  if (!workspaceFolder) return [];
+
+  const startLine = range.start.line + 1;
+  const endLine = Math.min(range.end.line + 1, startLine + 80);
+
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['blame', '--porcelain', `-L`, `${startLine},${endLine}`, document.uri.fsPath],
+      { cwd: workspaceFolder.uri.fsPath }
+    );
+
+    return parseBlamePorcelain(stdout);
+  } catch {
+    return [];
+  }
+}
+
+async function loadHistory(document: vscode.TextDocument, range: vscode.Range): Promise<CommitEntry[]> {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+  if (!workspaceFolder) return [];
+
+  const config = vscode.workspace.getConfiguration('codeCoach');
+  const rawLimit = config.get<number>('deepDive.historyLimit', 10);
+  const limit = clampNumber(rawLimit, 1, 30, 10);
+
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      [
+        'log',
+        '-n',
+        String(limit),
+        '--pretty=format:%h%x09%an%x09%ad%x09%s',
+        '--date=short',
+        '--',
+        document.uri.fsPath
+      ],
+      { cwd: workspaceFolder.uri.fsPath }
+    );
+    return parseHistory(stdout);
+  } catch {
+    return [];
+  }
+}
+
+function parseHistory(text: string): CommitEntry[] {
+  const lines = text.replace(/\r\n/g, '\n').split('\n').filter(Boolean);
+  const entries: CommitEntry[] = [];
+  for (const line of lines) {
+    const [hash, author, date, summary] = line.split('\t');
+    if (!hash || !author || !date || !summary) continue;
+    entries.push({ hash, author, date, summary });
+  }
+  return entries;
+}
+
+function clampNumber(value: number | undefined, min: number, max: number, fallback: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
+function parseBlamePorcelain(text: string): BlameEntry[] {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const entries: BlameEntry[] = [];
+  let current: Partial<BlameEntry> = {};
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+
+    if (/^[0-9a-f]{8,}\s/.test(line)) {
+      const parts = line.split(' ');
+      const lineNumber = Number(parts[2]);
+      current = { line: lineNumber };
+      continue;
+    }
+
+    if (line.startsWith('author ')) current.author = line.replace('author ', '').trim();
+    if (line.startsWith('author-time ')) {
+      const ts = Number(line.replace('author-time ', '').trim());
+      if (!Number.isNaN(ts)) {
+        current.time = new Date(ts * 1000).toLocaleDateString();
+      }
+    }
+    if (line.startsWith('summary ')) current.summary = line.replace('summary ', '').trim();
+
+    if (line.startsWith('\t')) {
+      if (current.line && current.author && current.summary && current.time) {
+        entries.push(current as BlameEntry);
+      }
+      current = {};
+    }
+  }
+
+  return entries;
+}
+
+async function loadCoverage(document: vscode.TextDocument, range: vscode.Range): Promise<CoverageSummary | undefined> {
+  const files = await findCoverageFiles();
+  if (files.length === 0) return undefined;
+
+  for (const file of files) {
+    try {
+      const data = await vscode.workspace.fs.readFile(file);
+      const text = Buffer.from(data).toString('utf8');
+      const summary =
+        coverageFormatForPath(file.fsPath) === 'istanbul'
+          ? parseIstanbulForFile(text, document.uri.fsPath, range)
+          : parseLcovForFile(text, document.uri.fsPath, range);
+      if (summary) return summary;
+    } catch {
+      continue;
+    }
+  }
+
+  return undefined;
+}
+
+function parseLcovForFile(text: string, targetPath: string, range: vscode.Range): CoverageSummary | undefined {
+  const normalizedTarget = path.normalize(targetPath);
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+
+  let inFile = false;
+  let filePath = '';
+  const hitsByLine = new Map<number, number>();
+
+  for (const line of lines) {
+    if (line.startsWith('SF:')) {
+      filePath = path.normalize(line.slice(3).trim());
+      inFile = filePath === normalizedTarget || path.resolve(filePath) === path.resolve(normalizedTarget);
+      continue;
+    }
+    if (!inFile) continue;
+    if (line.startsWith('DA:')) {
+      const [lineNoRaw, hitsRaw] = line.slice(3).split(',');
+      const lineNo = Number(lineNoRaw);
+      const hits = Number(hitsRaw);
+      if (!Number.isNaN(lineNo) && !Number.isNaN(hits)) {
+        hitsByLine.set(lineNo, hits);
+      }
+      continue;
+    }
+    if (line.startsWith('end_of_record')) {
+      if (inFile) break;
+    }
+  }
+
+  if (hitsByLine.size === 0) return undefined;
+
+  const start = range.start.line + 1;
+  const end = range.end.line + 1;
+  const lineNumbers = Array.from(hitsByLine.keys()).filter(l => l >= start && l <= end);
+  if (lineNumbers.length === 0) return undefined;
+
+  let hitLines = 0;
+  const uncovered: number[] = [];
+  for (const lineNo of lineNumbers) {
+    const hits = hitsByLine.get(lineNo) ?? 0;
+    if (hits > 0) hitLines += 1;
+    else uncovered.push(lineNo);
+  }
+
+  return {
+    totalLines: lineNumbers.length,
+    hitLines,
+    uncoveredLines: uncovered.slice(0, 100),
+    source: 'lcov.info'
+  };
+}
+
+function parseIstanbulForFile(text: string, targetPath: string, range: vscode.Range): CoverageSummary | undefined {
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!json || typeof json !== 'object') return undefined;
+
+  const normalizedTarget = path.normalize(targetPath);
+  let entry: any;
+  for (const [filePath, value] of Object.entries(json)) {
+    if (!filePath) continue;
+    const normalizedEntry = path.normalize(filePath);
+    if (normalizedEntry === normalizedTarget || normalizedTarget.endsWith(normalizedEntry)) {
+      entry = value;
+      break;
+    }
+  }
+  if (!entry) return undefined;
+
+  const lineMap = entry.l || entry.lines || {};
+  const hitsByLine = new Map<number, number>();
+  for (const [lineKey, hit] of Object.entries(lineMap)) {
+    const lineNo = Number(lineKey);
+    const count = Number(hit);
+    if (!Number.isNaN(lineNo) && !Number.isNaN(count)) {
+      hitsByLine.set(lineNo, count);
+    }
+  }
+  if (hitsByLine.size === 0) return undefined;
+
+  const start = range.start.line + 1;
+  const end = range.end.line + 1;
+  const lineNumbers = Array.from(hitsByLine.keys()).filter(l => l >= start && l <= end);
+  if (lineNumbers.length === 0) return undefined;
+
+  let hitLines = 0;
+  const uncovered: number[] = [];
+  for (const lineNo of lineNumbers) {
+    const hits = hitsByLine.get(lineNo) ?? 0;
+    if (hits > 0) hitLines += 1;
+    else uncovered.push(lineNo);
+  }
+
+  return {
+    totalLines: lineNumbers.length,
+    hitLines,
+    uncoveredLines: uncovered.slice(0, 100),
+    source: 'coverage-final.json'
+  };
+}
+
+async function findCoverageFiles(): Promise<vscode.Uri[]> {
+  const patterns = getCoveragePatterns();
+  const exclude = '**/node_modules/**';
+  const filesMap = new Map<string, vscode.Uri>();
+  for (const pattern of patterns) {
+    const files = await vscode.workspace.findFiles(pattern, exclude, 5);
+    for (const file of files) {
+      filesMap.set(file.toString(), file);
+    }
+  }
+  return Array.from(filesMap.values());
+}
+
+function getCoveragePatterns(): string[] {
+  const config = vscode.workspace.getConfiguration('codeCoach');
+  const raw = config.get<string[]>('testGaps.coveragePaths');
+  if (raw && raw.length > 0) {
+    return raw.filter(Boolean);
+  }
+  return ['**/lcov.info', '**/coverage-final.json'];
+}
+
+function coverageFormatForPath(filePath: string): 'lcov' | 'istanbul' {
+  const base = path.basename(filePath).toLowerCase();
+  if (base.endsWith('.json')) return 'istanbul';
+  return 'lcov';
+}
+
+const testFileCache = new Map<string, { updatedAt: number; files: vscode.Uri[] }>();
+const TEST_FILE_TTL_MS = 10000;
+
+async function findTestsForSymbol(
+  document: vscode.TextDocument,
+  symbol: vscode.DocumentSymbol
+): Promise<TestReference[]> {
+  if (!symbol.name) return [];
+  const testFiles = await findTestFiles(document.uri);
+  if (testFiles.length === 0) return [];
+
+  const results: TestReference[] = [];
+  for (const uri of testFiles) {
+    if (results.length >= 20) break;
+    try {
+      const data = await vscode.workspace.fs.readFile(uri);
+      const text = Buffer.from(data).toString('utf8');
+      const index = text.indexOf(symbol.name);
+      if (index === -1) continue;
+      const { lineNumber, column } = findLineAndColumn(text, index);
+      const lineText = readLine(text, lineNumber - 1);
+      const range = new vscode.Range(lineNumber - 1, column, lineNumber - 1, column + symbol.name.length);
+      const label = `${vscode.workspace.asRelativePath(uri.fsPath)}:${lineNumber}`;
+      const description = findNearestTestName(text, lineNumber - 1);
+      const fallback = lineText.trim();
+      results.push({
+        label,
+        uri,
+        range,
+        description: description ?? (fallback || undefined)
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return results;
+}
+
+async function findTestFiles(sourceUri: vscode.Uri): Promise<vscode.Uri[]> {
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(sourceUri);
+  if (!workspaceFolder) return [];
+
+  const cacheKey = workspaceFolder.uri.toString();
+  const cached = testFileCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.updatedAt < TEST_FILE_TTL_MS) {
+    return cached.files;
+  }
+
+  const patterns = [
+    '**/*.test.ts',
+    '**/*.test.tsx',
+    '**/*.test.js',
+    '**/*.test.jsx',
+    '**/*.spec.ts',
+    '**/*.spec.tsx',
+    '**/*.spec.js',
+    '**/*.spec.jsx',
+    '**/__tests__/**/*.ts',
+    '**/__tests__/**/*.tsx',
+    '**/__tests__/**/*.js',
+    '**/__tests__/**/*.jsx'
+  ];
+  const exclude = '**/node_modules/**';
+
+  const filesMap = new Map<string, vscode.Uri>();
+  for (const pattern of patterns) {
+    const files = await vscode.workspace.findFiles(pattern, exclude, 200);
+    for (const file of files) {
+      filesMap.set(file.toString(), file);
+    }
+  }
+
+  const files = Array.from(filesMap.values());
+  testFileCache.set(cacheKey, { updatedAt: now, files });
+  return files;
+}
+
+function findLineAndColumn(text: string, index: number): { lineNumber: number; column: number } {
+  const upto = text.slice(0, index);
+  const lines = upto.split('\n');
+  const lineNumber = lines.length;
+  const column = lines[lines.length - 1]?.length ?? 0;
+  return { lineNumber, column };
+}
+
+function readLine(text: string, lineIndex: number): string {
+  const lines = text.split('\n');
+  if (lineIndex < 0 || lineIndex >= lines.length) return '';
+  return lines[lineIndex];
+}
+
+function findNearestTestName(text: string, lineIndex: number): string | undefined {
+  const lines = text.split('\n');
+  const regex = /\b(describe|it|test)\s*\(\s*(['"`])(.+?)\2/;
+  for (let i = Math.min(lineIndex, lines.length - 1); i >= 0; i -= 1) {
+    const match = regex.exec(lines[i]);
+    if (match) {
+      return `${match[1]}: ${match[3]}`;
+    }
+  }
+  return undefined;
+}
